@@ -101,3 +101,27 @@
 @media(max-width:760px){.studio{height:auto;min-height:100dvh}.studio-header{height:67px;padding:0 20px;gap:13px}.header-context{display:none}.studio-columns{grid-template-columns:1fr}.map-side{min-height:570px}.question-heading{padding:27px 24px 0}.question-heading h1{font-size:25px}.map-canvas{min-height:340px}.cardbox{border-left:0;border-top:1px solid #e0e5e9;min-height:450px}.box-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;padding:0 22px 22px;overflow:visible}.paper-card{margin:0;height:100%}.quick-note{margin:0 22px 22px}.box-heading{padding:25px 24px 18px}.box-bottom{padding:17px 24px}.save-state{font-size:12px}.capture-jump{font-size:12px}.wordmark{font-size:23px}.feedback{font-size:13px;width:max-content;max-width:90vw}}
 @media(max-width:480px){.mobile-break{display:block}.question-heading h1{font-size:24px}.studio-header{gap:10px}.save-state{margin-left:auto}.capture-jump{padding:7px 10px}.map-side{min-height:570px}.canvas-hint{display:none}.map-topline{gap:5px}.map-controls{right:20px;bottom:20px}.map-bottom{font-size:11px}.box-list{grid-template-columns:1fr}.thought-sheet{width:100vw!important}.sheet-heading{padding:30px 23px 20px}.sheet-scroll{padding:22px 23px 35px}.sheet-heading [data-slot=sheet-title]{font-size:22px}.original-card{padding:19px}.thought-options{align-items:start;flex-direction:column}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* Focused reading and writing, with an optional card box. */
+.studio-columns.box-closed{grid-template-columns:minmax(0,1fr)}
+.studio-columns.box-open{grid-template-columns:minmax(0,1fr) 380px}
+.question-heading h1>button{text-align:left;font:inherit;letter-spacing:inherit}
+.capture-jump>span{color:#8a97a2;font-size:12px;margin-left:4px}
+.quick-footer{justify-content:flex-end}
+.box-bottom:empty{display:none}
+.immersive-window{width:min(1080px,calc(100vw - 64px))!important;max-width:1080px!important;height:calc(100dvh - 72px);max-height:1000px;padding:0!important;display:flex!important;flex-direction:column;gap:0!important;border-radius:12px;overflow:hidden;box-shadow:0 30px 100px #142c3d40}
+.immersive-window .sheet-heading{padding:40px max(40px,calc((100% - 760px)/2)) 26px;border-bottom:1px solid #edf0f2;flex-shrink:0}
+.immersive-window [data-slot=dialog-title]{font-family:"Songti SC","STSong",serif;font-size:30px;font-weight:500;line-height:1.6;margin-top:10px}
+.immersive-window .sheet-scroll{padding:28px max(40px,calc((100% - 760px)/2)) 60px;min-height:0;scrollbar-gutter:stable}
+.immersive-window .append-form{border-bottom:0;padding-bottom:8px}
+.immersive-window #new-thought{min-height:300px;line-height:2;font-size:18px;padding:20px 22px;resize:vertical;background:#fff;border-color:#e3e9ec;box-shadow:none}
+.immersive-window .thought-entry>p{font-size:18px;line-height:2}
+.immersive-window .connections{border-top:1px solid #e7ecef;padding-top:20px;margin-top:28px}
+.connections>summary{font-size:14px;color:#80909c;cursor:pointer;list-style:none}
+.connections>summary::before{content:'＋';margin-right:8px}
+.connections[open]>summary::before{content:'−'}
+.connections[open]>.section-heading{margin-top:15px}
+.immersive-window .question-actions{margin-bottom:22px}
+.immersive-window .question-actions>button{flex:none}
+@media(min-width:1550px){.studio-columns.box-open{grid-template-columns:minmax(0,1fr) 420px}}
+@media(max-width:1000px){.studio-columns.box-open{grid-template-columns:minmax(0,1fr) 330px}.immersive-window{width:calc(100vw - 40px)!important;height:calc(100dvh - 40px)}.immersive-window .sheet-heading{padding:30px 36px 22px}.immersive-window .sheet-scroll{padding:24px 36px 45px}}
+@media(max-width:760px){.studio-columns.box-open{grid-template-columns:1fr}.studio-columns.box-closed .map-side{min-height:calc(100dvh - 67px)}.immersive-window{width:100vw!important;height:100dvh;max-height:100dvh;border-radius:0}.immersive-window .sheet-heading{padding:30px 24px 18px}.immersive-window [data-slot=dialog-title]{font-size:25px}.immersive-window .sheet-scroll{padding:22px 24px 40px}.immersive-window #new-thought{padding:16px;min-height:260px}.cardbox{max-height:none}}
