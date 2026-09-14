@@ -1,3 +1,4 @@
+import { deletionPlan } from '@/lib/deletion';
 import { env } from 'cloudflare:workers';
 import { initialNotebook,normalize } from '@/lib/notebook';
 import { z } from 'zod';
@@ -26,3 +27,18 @@ export async function PUT(req:Request){try{
  const result=await db().prepare('UPDATE notebooks SET content=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(data),'personal',version).run();if(!result.meta.changes)return response('另一窗口已更新内容。请先复制输入，再刷新。',409);
  return Response.json({version:version+1});
  }catch(e){console.error(e);return response('保存没有完成，输入仍在，请重试。',503);}}
+
+export async function DELETE(req:Request){try{
+ if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return response('无效请求来源',403);
+ const input=z.object({id:z.string().min(1),version:z.number().int().nonnegative(),title:z.string().min(1),confirmed:z.literal(true),confirmation:z.literal('删除')}).safeParse(await req.json());
+ if(!input.success)return response('请完成两步删除确认。',400);
+ const row=await db().prepare('SELECT version,content FROM notebooks WHERE id=?').bind('personal').first<{version:number;content:string}>();
+ if(!row||row.version!==input.data.version)return response('笔记已发生变化，请刷新后重新核对删除范围。',409);
+ const current=normalize(JSON.parse(row.content));const target=current.notes.find(n=>n.id===input.data.id);
+ if(!target||target.kind!=='question'||!target.parent)return response('只能删除子问题，核心问题不能删除。',400);
+ if(target.title!==input.data.title)return response('问题已发生变化，请重新确认。',409);
+ const plan=deletionPlan(current,target.id);
+ const result=await db().prepare('UPDATE notebooks SET content=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(plan.next),'personal',row.version).run();
+ if(!result.meta.changes)return response('笔记已更新，删除没有执行，请刷新后重试。',409);
+ return Response.json({data:plan.next,version:row.version+1});
+ }catch(e){console.error(e);return response('删除没有完成，请重试。',503);}}
