@@ -51,9 +51,14 @@ assert.equal(notebook.numberOf(read().notes.find(n=>n.id==='cross-child'),read()
 let next=read();
 next.readingNotes.push({id:'reading',questionIds:['cross'],book:'书',author:'作者',chapter:'一',locator:'1',quote:'原文',interpretation:'理解',at:'today',thoughts:[]});
 next.crossThoughts[0].thoughts.push({id:'thought',text:'后续思考',origin:'自己的思考',reason:'',at:'today'});
+next.notes.find(n=>n.id==='child').thoughts.push({id:'child-thought',text:'将随子问题删除',origin:'自己的思考',reason:'',at:'today'});
 await put(next);
 next=read();next.crossThoughts[0].anchorRevisions.push({from:['language','child'],to:['world','child'],fromLabel:'1 ↔ 1.1',toLabel:'核心 ↔ 1.1',at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['world','child'];await put(next);
 assert.equal(read().readingNotes[0].quote,'原文');assert.equal(read().crossThoughts[0].thoughts[0].text,'后续思考');
+next=read();next.thoughtReplies.push({id:'reply',thoughtId:'thought',text:'我对这条思考的回答',at:'later'},{id:'child-reply',thoughtId:'child-thought',text:'对子问题思考的回答',at:'later'});await put(next);
+assert.equal(read().thoughtReplies[0].at,'later');
+next=read();next.thoughtReplies.push({id:'reply-2',thoughtId:'thought',text:'重复回答',at:'later'});await put(next,400);
+next=read();next.thoughtReplies[0].text='覆盖原回答';await put(next,400);
 next=read();next.crossThoughts[0].anchorIds=['world'];next.crossThoughts[0].anchorRevisions.push({from:['world','child'],to:['world'],at:'later',reason:'手动调整关联板块'});await put(next,400);
 next=read();next.crossThoughts[0].anchorIds=['world','world'];next.crossThoughts[0].anchorRevisions.push({from:['world','child'],to:['world','world'],at:'later',reason:'手动调整关联板块'});await put(next,400);
 next=read();next.crossThoughts[0].anchorIds=['world','missing'];next.crossThoughts[0].anchorRevisions.push({from:['world','child'],to:['world','missing'],at:'later',reason:'手动调整关联板块'});await put(next,400);
@@ -62,6 +67,7 @@ next=read();next.readingNotes[0].quote='覆盖';await put(next,400);
 await put(read(),409,0);
 const r=await api.DELETE(new Request('http://test/api/notebook',{method:'DELETE',body:JSON.stringify({id:'child',title:'子板块',version:state.version,confirmed:true,confirmation:'删除'})}));assert.equal(r.status,200);
 assert.equal(read().crossThoughts.length,1);assert.equal(read().readingNotes.length,1);
+assert.deepEqual(read().thoughtReplies.map(r=>r.id),['reply']);
 assert.equal(read().crossThoughts[0].anchorRevisions.at(-1).reason,'关联板块被删除');
 assert.equal(read().notes.some(n=>n.id==='cross-child'),true);
 await put(read());
@@ -69,4 +75,4 @@ next=read();next.crossThoughts[0].anchorRevisions.push({from:['world'],to:['worl
 assert.equal(read().crossThoughts[0].thoughts.length,1);
 next=read();next.crossThoughts.push({id:'cross-2',order:2,title:'由关联主题继续生长',anchorIds:['cross','world'],anchorRevisions:[],text:'',origin:'自己的思考',source:'',at:'today',thoughts:[]});await put(next);
 next=read();next.crossThoughts[0].anchorRevisions.push({from:['world','language'],to:['language','cross-2'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['language','cross-2'];await put(next,400);
-console.log('PASS: legacy repair, create, readings, append, branches, cross-theme anchors, cycle checks, conflicts and deletion preservation');
+console.log('PASS: legacy repair, create, readings, append, single replies with timestamps, branches, cross-theme anchors, cycle checks, conflicts and deletion preservation');
