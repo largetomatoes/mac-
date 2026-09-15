@@ -5,5 +5,7 @@ export function deletionPlan(data:Notebook,id:string){
  const ids=new Set([id]);let changed=true;
  while(changed){changed=false;for(const n of data.notes)if(n.parent&&ids.has(n.parent)&&!ids.has(n.id)){ids.add(n.id);changed=true;}}
  const notes=data.notes.filter(n=>ids.has(n.id));const links=data.links.filter(l=>ids.has(l.from)||ids.has(l.to));
- return {target,ids,notes,links,next:{...data,notes:data.notes.filter(n=>!ids.has(n.id)),links:data.links.filter(l=>!ids.has(l.from)&&!ids.has(l.to)),dismissedSuggestions:data.dismissedSuggestions.filter(s=>!Array.from(ids).some(id=>s.endsWith(':'+id)))}};
+ const readingNotes=data.readingNotes.filter(n=>n.questionIds.some(id=>ids.has(id)));
+ const keptReadingNotes=data.readingNotes.flatMap(n=>{const questionIds=n.questionIds.filter(id=>!ids.has(id));return questionIds.length?[{...n,questionIds}]:[];});
+ return {target,ids,notes,links,readingNotes,next:{...data,notes:data.notes.filter(n=>!ids.has(n.id)),readingNotes:keptReadingNotes,links:data.links.filter(l=>!ids.has(l.from)&&!ids.has(l.to)),dismissedSuggestions:data.dismissedSuggestions.filter(s=>!Array.from(ids).some(id=>s.endsWith(':'+id)))}};
 }
