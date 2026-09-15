@@ -1,4 +1,4 @@
-import type {Notebook} from './notebook';
+import {crossSignature,type Notebook} from './notebook';
 export function deletionPlan(data:Notebook,id:string){
  const target=data.notes.find(n=>n.id===id);
  if(!target||target.kind!=='question'||!target.parent)throw new Error('只能删除子问题，核心问题不能删除。');
@@ -9,6 +9,6 @@ export function deletionPlan(data:Notebook,id:string){
  const keptReadingNotes=data.readingNotes.flatMap(n=>{const questionIds=n.questionIds.filter(id=>!ids.has(id));return questionIds.length?[{...n,questionIds}]:[];});
  const thoughtIds=new Set(notes.flatMap(n=>(n.thoughts||[]).map(t=>t.id)));const removedAnchors=new Set([...ids,...thoughtIds]);
  const crossThoughts=data.crossThoughts.filter(c=>c.anchorIds.some(id=>removedAnchors.has(id)));
- const keptCrossThoughts=data.crossThoughts.map(c=>({...c,anchorIds:c.anchorIds.filter(id=>!removedAnchors.has(id))}));
+ const keptCrossThoughts=data.crossThoughts.map(c=>{const anchorIds=c.anchorIds.filter(id=>!removedAnchors.has(id));return anchorIds.length===c.anchorIds.length?c:{...c,anchorIds,anchorRevisions:[...c.anchorRevisions,{from:c.anchorIds,to:anchorIds,fromLabel:crossSignature(c,data),toLabel:crossSignature({...c,anchorIds},data),at:new Date().toISOString(),reason:'关联板块被删除'}]};});
  return {target,ids,notes,links,readingNotes,crossThoughts,next:{...data,notes:data.notes.filter(n=>!ids.has(n.id)),readingNotes:keptReadingNotes,crossThoughts:keptCrossThoughts,links:data.links.filter(l=>!ids.has(l.from)&&!ids.has(l.to)),dismissedSuggestions:data.dismissedSuggestions.filter(s=>!Array.from(ids).some(id=>s.endsWith(':'+id)))}};
 }
