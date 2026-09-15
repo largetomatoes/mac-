@@ -3,7 +3,7 @@ export type Thought = { id:string; text:string; origin:string; reason:string; at
 export type Note = { id:string; kind:'question'|'answer'; parent:string|null; order:number; title:string; body:string; origin:string; source:string; revisions:Revision[]; thoughts?:Thought[] };
 export type Card = { id:string; text:string; origin:string; source:string; at:string; thoughts:Thought[] };
 export type ReadingNote = { id:string; questionIds:string[]; book:string; author:string; chapter:string; locator:string; quote:string; interpretation:string; at:string; thoughts:Thought[] };
-export type CrossThought = { id:string; anchorIds:string[]; text:string; origin:string; source:string; at:string; thoughts:Thought[] };
+export type CrossThought = { title?:string; id:string; anchorIds:string[]; text:string; origin:string; source:string; at:string; thoughts:Thought[] };
 export type Link = { id:string; from:string; to:string; type:string };
 export type Notebook = { notes:Note[]; links:Link[]; cards:Card[]; readingNotes:ReadingNote[]; crossThoughts:CrossThought[]; dismissedSuggestions:string[] };
 export const ROOT='world';
@@ -14,7 +14,7 @@ export const initialNotebook:Notebook = { notes:[
 ],links:[],cards:[exampleCard],readingNotes:[],crossThoughts:[],dismissedSuggestions:[] };
 export function normalize(data:Partial<Notebook>):Notebook {return {...initialNotebook,...data,notes:(data.notes||initialNotebook.notes).map(n=>({...n,thoughts:n.thoughts||[]})),cards:data.cards??[exampleCard],readingNotes:(data.readingNotes||[]).map(n=>({...n,thoughts:n.thoughts||[]})),crossThoughts:(data.crossThoughts||[]).map(n=>({...n,thoughts:n.thoughts||[]})),dismissedSuggestions:data.dismissedSuggestions||[]};}
 export function numberOf(n:Note,notes:Note[]):string { if(n.kind==='answer')return '回答';if(!n.parent)return '';const siblings=notes.filter(x=>x.kind==='question'&&x.parent===n.parent).sort((a,b)=>a.order-b.order);const position=Math.max(1,siblings.findIndex(x=>x.id===n.id)+1);const p=notes.find(x=>x.id===n.parent);const prefix=p?numberOf(p,notes):'';return prefix?prefix+'.'+position:String(position); }
-export function itemText(data:Notebook,id:string){const c=data.cards.find(c=>c.id===id);return c?.text||data.notes.find(n=>n.id===id)?.title||'';}
+export function itemText(data:Notebook,id:string){const c=data.cards.find(c=>c.id===id);return data.crossThoughts.find(c=>c.id===id)?.title||data.crossThoughts.find(c=>c.id===id)?.text||c?.text||data.notes.find(n=>n.id===id)?.title||'';}
 const topics=[
  {name:'表达与语言',words:['诚实','言语','语言','表达','说话','谎言','沉默']},
  {name:'动机与行动',words:['动机','行动','意图','欲望','目的','选择']},

@@ -9,6 +9,6 @@ export function deletionPlan(data:Notebook,id:string){
  const keptReadingNotes=data.readingNotes.flatMap(n=>{const questionIds=n.questionIds.filter(id=>!ids.has(id));return questionIds.length?[{...n,questionIds}]:[];});
  const thoughtIds=new Set(notes.flatMap(n=>(n.thoughts||[]).map(t=>t.id)));const removedAnchors=new Set([...ids,...thoughtIds]);
  const crossThoughts=data.crossThoughts.filter(c=>c.anchorIds.some(id=>removedAnchors.has(id)));
- const keptCrossThoughts=data.crossThoughts.flatMap(c=>{const anchorIds=c.anchorIds.filter(id=>!removedAnchors.has(id));return anchorIds.length>=2?[{...c,anchorIds}]:[];});
+ const keptCrossThoughts=data.crossThoughts.map(c=>({...c,anchorIds:c.anchorIds.filter(id=>!removedAnchors.has(id))}));
  return {target,ids,notes,links,readingNotes,crossThoughts,next:{...data,notes:data.notes.filter(n=>!ids.has(n.id)),readingNotes:keptReadingNotes,crossThoughts:keptCrossThoughts,links:data.links.filter(l=>!ids.has(l.from)&&!ids.has(l.to)),dismissedSuggestions:data.dismissedSuggestions.filter(s=>!Array.from(ids).some(id=>s.endsWith(':'+id)))}};
 }
