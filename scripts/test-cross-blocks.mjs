@@ -29,6 +29,19 @@ const DB={prepare(sql){
 const api=load('app/api/notebook/route.ts',{'@/lib/deletion':deletion,'@/lib/notebook':notebook,'cloudflare:workers':{env:{DB}},zod:{z}});
 const read=()=>JSON.parse(state.content);
 async function put(data,expected=200,version=state.version){const r=await api.PUT(new Request('http://test/api/notebook',{method:'PUT',body:JSON.stringify({data,version})}));assert.equal(r.status,expected,await r.text());}
+const legacy=structuredClone(notebook.initialNotebook);
+legacy.crossThoughts=[
+ {id:'legacy-a',order:1,title:'',anchorIds:['world','language'],text:'旧关联一',origin:'自己的思考',source:'',at:'',thoughts:[]},
+ {id:'legacy-b',order:1,title:'旧关联二',anchorIds:['world','language'],text:'',origin:'自己的思考',source:'',at:'',thoughts:[]}
+];
+state={version:0,content:JSON.stringify(legacy)};
+const repaired=notebook.normalize(read());
+assert.deepEqual(repaired.crossThoughts.map(c=>c.order),[1,2]);
+assert.equal(repaired.crossThoughts[0].title,undefined);
+repaired.notes[1].thoughts.push({id:'legacy-thought',text:'旧数据修复后仍能新增思考',origin:'自己的思考',reason:'',at:'today'});
+await put(repaired);
+assert.equal(read().notes[1].thoughts.length,1);
+state={version:0,content:JSON.stringify(notebook.initialNotebook)};
 const first=read();
 first.notes.push({...first.notes[1],id:'child',parent:'language',order:1,title:'子板块'});
 first.notes.push({...first.notes[1],id:'cross-child',parent:'cross',order:1,title:'交叉产生的子问题'});
@@ -54,4 +67,6 @@ assert.equal(read().notes.some(n=>n.id==='cross-child'),true);
 await put(read());
 next=read();next.crossThoughts[0].anchorRevisions.push({from:['world'],to:['world','language'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['world','language'];await put(next);
 assert.equal(read().crossThoughts[0].thoughts.length,1);
-console.log('PASS: create, readings, append, adjust, validation, conflicts, deletion preservation and reconnect');
+next=read();next.crossThoughts.push({id:'cross-2',order:2,title:'由关联主题继续生长',anchorIds:['cross','world'],anchorRevisions:[],text:'',origin:'自己的思考',source:'',at:'today',thoughts:[]});await put(next);
+next=read();next.crossThoughts[0].anchorRevisions.push({from:['world','language'],to:['language','cross-2'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['language','cross-2'];await put(next,400);
+console.log('PASS: legacy repair, create, readings, append, branches, cross-theme anchors, cycle checks, conflicts and deletion preservation');

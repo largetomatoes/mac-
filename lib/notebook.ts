@@ -13,7 +13,16 @@ export const initialNotebook:Notebook = { notes:[
  {id:ROOT,kind:'question',parent:null,order:1,title:'我们该如何处理我们和世界的关系？',body:'',origin:'自己的推演',source:'',revisions:[],thoughts:[]},
  {id:'language',kind:'question',parent:ROOT,order:2,title:'我们与言语结构、动机的关系是什么？',body:'',origin:'自己的推演',source:'',revisions:[],thoughts:[]}
 ],links:[],cards:[exampleCard],readingNotes:[],crossThoughts:[],dismissedSuggestions:[] };
-export function normalize(data:Partial<Notebook>):Notebook {return {...initialNotebook,...data,notes:(data.notes||initialNotebook.notes).map(n=>({...n,thoughts:n.thoughts||[]})),cards:data.cards??[exampleCard],readingNotes:(data.readingNotes||[]).map(n=>({...n,thoughts:n.thoughts||[]})),crossThoughts:(data.crossThoughts||[]).map((n,index)=>({...n,order:n.order||index+1,anchorRevisions:n.anchorRevisions||[],thoughts:n.thoughts||[]})),dismissedSuggestions:data.dismissedSuggestions||[]};}
+export function normalize(data:Partial<Notebook>):Notebook {
+ const usedOrders=new Set<number>();
+ const crossThoughts=(data.crossThoughts||[]).map(n=>{
+  let order=Number.isInteger(n.order)&&n.order>0&&!usedOrders.has(n.order)?n.order:1;
+  while(usedOrders.has(order))order++;
+  usedOrders.add(order);
+  return {...n,title:n.title?.trim()||undefined,order,anchorRevisions:n.anchorRevisions||[],thoughts:n.thoughts||[]};
+ });
+ return {...initialNotebook,...data,notes:(data.notes||initialNotebook.notes).map(n=>({...n,thoughts:n.thoughts||[]})),cards:(data.cards??[exampleCard]).map(c=>({...c,thoughts:c.thoughts||[]})),readingNotes:(data.readingNotes||[]).map(n=>({...n,thoughts:n.thoughts||[]})),crossThoughts,dismissedSuggestions:data.dismissedSuggestions||[]};
+}
 export function crossNumber(c:CrossThought){return `X${c.order}`;}
 export function numberOf(n:Note,notes:Note[],crossThoughts:CrossThought[]=[]):string { if(n.kind==='answer')return '回答';if(!n.parent)return '';const siblings=notes.filter(x=>x.kind==='question'&&x.parent===n.parent).sort((a,b)=>a.order-b.order);const position=Math.max(1,siblings.findIndex(x=>x.id===n.id)+1);const p=notes.find(x=>x.id===n.parent);const cross=crossThoughts.find(x=>x.id===n.parent);const prefix=p?numberOf(p,notes,crossThoughts):cross?crossNumber(cross):'';return prefix?prefix+'.'+position:String(position); }
 export function crossSignature(c:CrossThought,data:Notebook){return c.anchorIds.map(id=>{const n=data.notes.find(n=>n.id===id);return n?numberOf(n,data.notes,data.crossThoughts)||'核心':data.crossThoughts.find(x=>x.id===id)?crossNumber(data.crossThoughts.find(x=>x.id===id)!):'原连接';}).join(' ↔ ');}

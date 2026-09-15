@@ -15,7 +15,8 @@ const response=(error:string,status:number)=>Response.json({error},{status});
 export async function GET(){try{const d=db();await d.prepare('INSERT OR IGNORE INTO notebooks(id,version,content) VALUES(?,0,?)').bind('personal',JSON.stringify(initialNotebook)).run();const row=await d.prepare('SELECT version,content FROM notebooks WHERE id=?').bind('personal').first<{version:number;content:string}>();return Response.json({version:row!.version,data:normalize(JSON.parse(row!.content))},{headers:{'Cache-Control':'no-store'}});}catch(e){console.error(e);return response('暂时无法读取卡片，请重试。',503);}}
 export async function PUT(req:Request){try{
  if(req.headers.get('origin')&&req.headers.get('origin')!==new URL(req.url).origin)return response('无效请求来源',403);
- const parsed=schema.safeParse(await req.json());if(!parsed.success)return response('内容格式不正确或超出容量。',400);
+ const raw=await req.json() as {data?:Partial<ReturnType<typeof normalize>>;version?:number};
+ const parsed=schema.safeParse(raw&&typeof raw==='object'&&raw.data&&typeof raw.data==='object'?{...raw,data:normalize(raw.data)}:raw);if(!parsed.success){console.warn('notebook_validation',parsed.error.issues.map(i=>`${i.path.join('.')}:${i.code}`).join(','));return response('有一条旧记录需要兼容处理，请刷新页面后再试。',400);}
  const {data,version}=parsed.data;
  const current=await db().prepare('SELECT version,content FROM notebooks WHERE id=?').bind('personal').first<{version:number;content:string}>();
  if(!current||current.version!==version)return response('另一窗口已保存新内容。请先复制当前输入，再刷新页面。',409);
@@ -26,9 +27,13 @@ export async function PUT(req:Request){try{
  for(const n of data.notes){if(n.parent&&!data.notes.some(p=>p.id===n.parent&&p.kind==='question')&&!data.crossThoughts.some(c=>c.id===n.parent))return response('子问题与回答需要连接到问题或交叉板块。',400);if(n.kind==='answer'&&!n.parent)return response('回答需要有所属问题。',400);let p:typeof n|undefined=n;const visited=new Set<string>();while(p?.parent&&data.notes.some(x=>x.id===p!.parent)){if(visited.has(p.id))return response('问题层级不能形成循环。',400);visited.add(p.id);p=data.notes.find(x=>x.id===p!.parent);}}
  for(const l of data.links)if(!ids.has(l.from)||!ids.has(l.to)||l.from===l.to)return response('这条联系无效。',400);
  for(const r of data.readingNotes)if(r.questionIds.some(id=>!data.notes.some(n=>n.id===id&&n.kind==='question')&&!data.crossThoughts.some(c=>c.id===id)))return response('阅读笔记需要属于有效的问题。',400);
- const anchorIds=new Set([...data.notes.map(n=>n.id),...data.notes.flatMap(n=>(n.thoughts||[]).map(t=>t.id)),...data.cards.flatMap(c=>c.thoughts.map(t=>t.id))]);
+ const anchorIds=new Set([...data.notes.map(n=>n.id),...data.crossThoughts.map(c=>c.id),...data.notes.flatMap(n=>(n.thoughts||[]).map(t=>t.id)),...data.cards.flatMap(c=>c.thoughts.map(t=>t.id))]);
  for(const c of data.crossThoughts)if((!c.title&&!c.text.trim())||(c.anchorIds.length<2&&JSON.stringify(old.crossThoughts.find(x=>x.id===c.id)?.anchorIds)!==JSON.stringify(c.anchorIds))||new Set(c.anchorIds).size!==c.anchorIds.length||c.anchorIds.some(id=>!anchorIds.has(id)))return response('交叉思考需要连接至少两个有效板块。',400);
- const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+ const crossIds=new Set(data.crossThoughts.map(c=>c.id)),visiting=new Set<string>(),visited=new Set<string>();
+ const hasCrossCycle=(id:string):boolean=>{if(visiting.has(id))return true;if(visited.has(id))return false;visiting.add(id);const cycle=data.crossThoughts.find(c=>c.id===id)?.anchorIds.filter(a=>crossIds.has(a)).some(hasCrossCycle)||false;visiting.delete(id);visited.add(id);return cycle;};
+ if(data.crossThoughts.some(c=>hasCrossCycle(c.id)))return response('关联主题之间不能形成循环。',400);
+ const stable=(value:unknown):unknown=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,stable(item)])):value;
+ const same=(a:unknown,b:unknown)=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
  for(const c of old.cards){const next=data.cards.find(n=>n.id===c.id);if(!next||!same({...c,thoughts:[]},{...next,thoughts:[]})||!same(c.thoughts,next.thoughts.slice(0,c.thoughts.length)))return response('原话和已有思考需要保留，请追加新的思考。',400);}
  for(const n of old.notes){const next=data.notes.find(x=>x.id===n.id);if(!next||!same({...n,thoughts:[]},{...next,thoughts:[]})||!same(n.thoughts,next.thoughts.slice(0,n.thoughts?.length||0)))return response('原有问题与回答需要保留，请追加新的思考。',400);}
  for(const r of old.readingNotes){const next=data.readingNotes.find(n=>n.id===r.id);if(!next||!same({...r,thoughts:[]},{...next,thoughts:[]})||!same(r.thoughts,next.thoughts.slice(0,r.thoughts.length)))return response('阅读笔记的原文、来源和已有理解需要保留，请追加新的思考。',400);}
