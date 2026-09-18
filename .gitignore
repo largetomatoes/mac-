@@ -43,6 +43,26 @@ next-env.d.ts
 /.agents/
 /.codex/
 /outputs/
-/work/
+/work/*
+
+# Publish only the reproducible macOS shell sources. Personal data, books,
+# dependencies, built apps, and release archives under work/ stay ignored.
+!/work/mac-app/
+/work/mac-app/*
+!/work/mac-app/asar-src/
+!/work/mac-app/asar-src/main.js
+!/work/mac-app/asar-src/package.json
+!/work/mac-app/local-spa/
+/work/mac-app/local-spa/*
+!/work/mac-app/local-spa/index.html
+!/work/mac-app/local-spa/main.tsx
+!/work/mac-app/local-spa/vite.config.mjs
+!/work/mac-app/AppIcon.iconset/
+!/work/mac-app/AppIcon.iconset/*.png
+!/work/mac-app/AppIcon.icns
+!/work/mac-app/app-icon.svg
+!/work/mac-app/build-icon.mjs
+!/work/mac-app/native-Info.plist
+!/work/mac-app/seed.json
 
 *.tsbuildinfo

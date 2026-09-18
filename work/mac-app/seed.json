@@ -1,0 +1,41 @@
+{
+  "version": 0,
+  "data": {
+    "notes": [
+      {
+        "id": "world",
+        "kind": "question",
+        "parent": null,
+        "order": 1,
+        "title": "我们该如何处理我们和世界的关系？",
+        "body": "",
+        "origin": "自己的推演",
+        "source": "",
+        "revisions": [],
+        "thoughts": []
+      },
+      {
+        "id": "language",
+        "kind": "question",
+        "parent": "world",
+        "order": 1,
+        "title": "我们与言语结构、动机的关系是什么？",
+        "body": "",
+        "origin": "自己的推演",
+        "source": "",
+        "revisions": [],
+        "thoughts": []
+      }
+    ],
+    "links": [],
+    "cards": [],
+    "readingNotes": [],
+    "crossThoughts": [],
+    "thoughtReplies": [],
+    "manuscripts": [],
+    "libraryBooks": [],
+    "libraryHighlights": [],
+    "ocrCache": [],
+    "dismissedSuggestions": []
+  }
+}
