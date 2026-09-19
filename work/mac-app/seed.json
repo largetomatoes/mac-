@@ -36,6 +36,7 @@
     "libraryBooks": [],
     "libraryHighlights": [],
     "ocrCache": [],
-    "dismissedSuggestions": []
+    "dismissedSuggestions": [],
+    "bookThoughts": []
   }
 }
