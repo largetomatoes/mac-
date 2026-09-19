@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Check, ChevronDown, CornerDownRight, Plus } from "lucide-react";
+import { BookOpen, Check, ChevronDown, CornerDownRight, Lightbulb, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ const excerpt = (text: string, length = 90) => text.length > length ? `${text.sl
 
 export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initialId }: Props) {
   const notes = data.readingNotes.filter((note) => note.questionIds.includes(questionId));
+  const bookThoughts = data.bookThoughts.filter((entry) => entry.questionIds.includes(questionId));
   const [expanded, setExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -93,8 +94,8 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
   const replyRecord = data.thoughtReplies.find((reply) => reply.thoughtId === replyingId);
 
   return <section className="reading-section">
-    <div className="reading-heading"><button type="button" className="reading-toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><BookOpen size={17}/><strong>阅读笔记</strong><span>{notes.length}</span><ChevronDown size={16}/></button>{expanded && <Button variant="outline" size="sm" onClick={() => setCreating(true)}><Plus/>摘录原文</Button>}</div>
-    {expanded && <>{!groups.length && <p className="reading-empty">暂无阅读笔记</p>}
+    <div className="reading-heading"><button type="button" className="reading-toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><BookOpen size={17}/><strong>阅读笔记</strong><span>{notes.length+bookThoughts.length}</span><ChevronDown size={16}/></button>{expanded && <Button variant="outline" size="sm" onClick={() => setCreating(true)}><Plus/>摘录原文</Button>}</div>
+    {expanded && <>{!groups.length&&!bookThoughts.length && <p className="reading-empty">暂无阅读笔记</p>}
     <div className="book-groups">{groups.map((group) => <section className="book-group" key={`${group.book}|${group.author}`}>
       <header><BookOpen size={16}/><div><strong>《{group.book}》</strong><span>{group.author}</span></div></header>
       {Array.from(group.chapters.values()).map((chapterGroup) => <details className="chapter-group" key={chapterGroup.chapter}>
@@ -103,7 +104,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
           <span>{reading.locator || "原文"}</span><p>{excerpt(reading.quote)}</p><footer>{reading.thoughts.length ? `${reading.thoughts.length} 条后续思考` : "查看理解"}</footer>
         </button>)}</div>
       </details>)}
-    </section>)}</div></>}
+    </section>)}</div>{!!bookThoughts.length&&<section className="linked-book-thoughts"><h3><Lightbulb size={15}/>来自书籍的思考</h3>{bookThoughts.map(entry=><button type="button" key={entry.id} disabled={!entry.libraryBookId||!onOpenBook} onClick={()=>entry.libraryBookId&&onOpenBook?.(entry.libraryBookId,entry.sourceLocation)}><span>《{entry.bookTitle}》{entry.locator?` · ${entry.locator}`:' · 全书'}</span><p>{entry.text}</p><small>{entry.thoughts.length?`${entry.thoughts.length} 条后续思考 · `:''}{when(entry.at)}</small></button>)}</section>}</>}
 
     <Dialog open={creating} onOpenChange={setCreating}><DialogContent className="reading-create-dialog"><DialogTitle>摘录原文</DialogTitle><DialogDescription>每段原文独立保存，同一本书的同一章节会自动集合。</DialogDescription><form onSubmit={createNote} className="reading-create-form">
       <div className="source-fields"><label>书名<Input list="reading-books" value={book} onChange={(e) => setBook(e.target.value)} required/><datalist id="reading-books">{books.map((value) => <option key={value} value={value}/>)}</datalist></label><label>作者（可选）<Input list="reading-authors" value={author} onChange={(e) => setAuthor(e.target.value)}/><datalist id="reading-authors">{authors.map((value) => <option key={value} value={value}/>)}</datalist></label></div>
