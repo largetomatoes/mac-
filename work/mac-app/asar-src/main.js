@@ -25,7 +25,7 @@ app.commandLine.appendSwitch('proxy-bypass-list', 'localhost;127.0.0.1;[::1]');
 app.commandLine.appendSwitch('host-resolver-rules', 'MAP * 0.0.0.0, EXCLUDE localhost');
 app.setName('问间');
 if (process.env.WENJIAN_TEST_DATA_DIR) app.setPath('userData', process.env.WENJIAN_TEST_DATA_DIR);
-app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: '1.8.2', version: '13', copyright: '私人本地笔记应用' });
+app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: '1.8.7', version: '18', copyright: '私人本地笔记应用' });
 
 async function resolveStorageDirectory() {
   const localDir = app.getPath('userData');
@@ -54,10 +54,10 @@ function jsonReply(response, status, body) {
   response.end(JSON.stringify(body));
 }
 function validNotebookData(data) {
-  return data && typeof data === 'object' && ['notes', 'cards', 'readingNotes', 'crossThoughts', 'thoughtReplies', 'manuscripts', 'libraryBooks', 'libraryHighlights', 'ocrCache', 'links', 'dismissedSuggestions'].every((key) => Array.isArray(data[key])) && data.notes.length > 0;
+  return data && typeof data === 'object' && ['notes', 'cards', 'readingNotes', 'crossThoughts', 'thoughtReplies', 'manuscripts', 'libraryBooks', 'libraryHighlights', 'ocrCache', 'bookThoughts', 'links', 'dismissedSuggestions'].every((key) => Array.isArray(data[key])) && data.notes.length > 0;
 }
 function normalizeNotebookData(data) {
-  return { ...data, thoughtReplies: data.thoughtReplies || [], manuscripts: data.manuscripts || [], libraryBooks: data.libraryBooks || [], libraryHighlights: data.libraryHighlights || [], ocrCache: data.ocrCache || [], links: data.links || [], dismissedSuggestions: data.dismissedSuggestions || [] };
+  return { ...data, thoughtReplies: data.thoughtReplies || [], manuscripts: data.manuscripts || [], libraryBooks: data.libraryBooks || [], libraryHighlights: data.libraryHighlights || [], ocrCache: data.ocrCache || [], bookThoughts: (data.bookThoughts || []).map((entry) => ({ ...entry, scope: entry.scope || 'book', locator: entry.locator || '', questionIds: entry.questionIds || [], thoughts: entry.thoughts || [] })), links: data.links || [], dismissedSuggestions: data.dismissedSuggestions || [] };
 }
 async function readStore() {
   const value = JSON.parse(await fsp.readFile(dataPath, 'utf8'));
@@ -94,9 +94,9 @@ function deleteQuestion(data, id) {
   }
   const removedReading = data.readingNotes.filter((note) => note.questionIds.some((questionId) => ids.has(questionId)));
   const removedNotes = data.notes.filter((note) => ids.has(note.id));
-  const thoughtIds = new Set([...removedNotes.flatMap((note) => (note.thoughts || []).map((thought) => thought.id)), ...removedReading.flatMap((note) => (note.thoughts || []).map((thought) => thought.id))]);
+  const thoughtIds = new Set(removedNotes.flatMap((note) => (note.thoughts || []).map((thought) => thought.id)));
   const removedAnchors = new Set([...ids, ...thoughtIds]);
-  const readingNotes = data.readingNotes.flatMap((note) => { const questionIds = note.questionIds.filter((questionId) => !ids.has(questionId)); return questionIds.length ? [{ ...note, questionIds }] : []; });
+  const readingNotes = data.readingNotes.map((note) => ({ ...note, questionIds: note.questionIds.filter((questionId) => !ids.has(questionId)) }));
   const crossThoughts = data.crossThoughts.map((cross) => {
     const anchorIds = cross.anchorIds.filter((anchorId) => !removedAnchors.has(anchorId));
     if (anchorIds.length === cross.anchorIds.length) return cross;
@@ -104,9 +104,9 @@ function deleteQuestion(data, id) {
   });
   return {
     ...data,
-    notes: data.notes.filter((note) => !ids.has(note.id)), readingNotes, crossThoughts,
+    notes: data.notes.filter((note) => !ids.has(note.id)), readingNotes, bookThoughts: data.bookThoughts.map((entry) => ({ ...entry, questionIds: entry.questionIds.filter((questionId) => !ids.has(questionId)) })), crossThoughts,
     thoughtReplies: (data.thoughtReplies || []).filter((reply) => !thoughtIds.has(reply.thoughtId)),
-    manuscripts: (data.manuscripts || []).map((manuscript) => ({ ...manuscript, links: (manuscript.links || []).filter((link) => link.targetKind === 'reading' ? !removedReading.some((note) => note.id === link.questionId) : !ids.has(link.questionId)) })),
+    manuscripts: (data.manuscripts || []).map((manuscript) => ({ ...manuscript, links: (manuscript.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)) })),
     links: data.links.filter((link) => !ids.has(link.from) && !ids.has(link.to)),
     dismissedSuggestions: data.dismissedSuggestions.filter((suggestion) => ![...ids].some((removedId) => suggestion.endsWith(`:${removedId}`)))
   };
@@ -182,6 +182,51 @@ async function handleLibraryImport(request, response) {
     return jsonReply(response, 500, { error: '书籍没有导入，请重试。' });
   }
 }
+async function handleLibraryDelete(request, response) {
+  let stagedFile = null;
+  let originalFile = null;
+  try {
+    if (request.method !== 'DELETE') return jsonReply(response, 405, { error: '不支持的操作。' });
+    const input = await requestBody(request);
+    const current = await readStore();
+    if (!Number.isInteger(input.version) || input.version !== current.version) return jsonReply(response, 409, { error: '另一窗口已保存新内容。请先重新载入。' });
+	    const book = current.data.libraryBooks.find((entry) => entry.id === input.id);
+    if (!input.confirmed || input.confirmation !== '删除' || !book || book.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
+    if (path.basename(book.storedFile) !== book.storedFile) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
+    originalFile = path.join(libraryDir, book.storedFile);
+    stagedFile = `${originalFile}.deleting-${crypto.randomUUID()}`;
+    try { await fsp.rename(originalFile, stagedFile); } catch (error) { if (error.code !== 'ENOENT') throw error; stagedFile = null; }
+	    const replacementBook = current.data.libraryBooks.find((entry) => entry.id !== book.id && entry.format === book.format && entry.originalName === book.originalName);
+	    const data = {
+      ...current.data,
+      libraryBooks: current.data.libraryBooks.filter((entry) => entry.id !== book.id),
+      libraryHighlights: current.data.libraryHighlights.filter((entry) => entry.libraryBookId !== book.id),
+      ocrCache: current.data.ocrCache.filter((entry) => entry.libraryBookId !== book.id),
+	      readingNotes: current.data.readingNotes.map((note) => {
+        if (note.libraryBookId !== book.id) return note;
+        const kept = { ...note };
+        delete kept.libraryBookId;
+        delete kept.sourceLocation;
+        return kept;
+	      }),
+	      bookThoughts: current.data.bookThoughts.map((entry) => {
+	        if (entry.libraryBookId !== book.id) return entry;
+	        if (replacementBook) return { ...entry, libraryBookId: replacementBook.id };
+	        const kept = { ...entry };
+	        delete kept.libraryBookId;
+	        delete kept.sourceLocation;
+	        return kept;
+	      })
+    };
+    await writeStore({ version: current.version + 1, data });
+    if (stagedFile) await fsp.unlink(stagedFile).catch(() => {});
+    return jsonReply(response, 200, { version: current.version + 1, data });
+  } catch (error) {
+    if (stagedFile && originalFile) await fsp.rename(stagedFile, originalFile).catch(() => {});
+    console.error(error);
+    return jsonReply(response, 500, { error: '书籍没有删除，请重试。' });
+  }
+}
 async function handleLibraryFile(request, response, pathname) {
   try {
     if (request.method !== 'GET') { response.writeHead(405); response.end(); return; }
@@ -213,6 +258,7 @@ async function startServer() {
     if (url.pathname === '/api/notebook') handleApi(request, response);
     else if (url.pathname === '/api/share') handleShare(request, response);
     else if (url.pathname === '/api/library/import') handleLibraryImport(request, response);
+    else if (url.pathname === '/api/library/delete') handleLibraryDelete(request, response);
     else if (url.pathname.startsWith('/api/library/file/')) handleLibraryFile(request, response, url.pathname);
     else handleStatic(request, response, url.pathname);
   });
@@ -229,6 +275,7 @@ async function restoreBackup() {
   if (chosen.canceled || !chosen.filePaths[0]) return;
   try {
     const value = JSON.parse(await fsp.readFile(chosen.filePaths[0], 'utf8'));
+    value.data = normalizeNotebookData(value.data || {});
     if (!Number.isInteger(value.version) || !validNotebookData(value.data)) throw new Error('invalid');
     const confirmation = await dialog.showMessageBox(mainWindow, { type: 'warning', title: '恢复备份', message: '恢复后，当前本地笔记会被这份备份替换。', detail: '问间会先自动保留一份当前数据的备用副本。', buttons: ['取消', '恢复'], defaultId: 0, cancelId: 0 });
     if (confirmation.response !== 1) return;
