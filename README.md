@@ -39,7 +39,7 @@ npm run package:mac --prefix work/mac-app # 在 Apple 芯片 Mac 上
 npm run package:win --prefix work/mac-app # 在 Windows x64 上
 ```
 
-仓库只包含代码、图标和空白种子数据；用户笔记、密钥、电子书、构建产物不纳入 Git。GitHub Actions 可为 Mac 和 Windows 生成下载包。
+仓库只包含代码、图标和空白种子数据；用户笔记、密钥、电子书、构建产物不纳入 Git。Mac 和 Windows 安装包目前通过本机打包并上传到 GitHub Releases；自动发布尚未启用。
 
 ## 当前版本
 
