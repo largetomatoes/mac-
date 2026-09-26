@@ -78,6 +78,7 @@ async function prepare() {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   manifest.description = '问间本地笔记应用';
   manifest.productName = '问间';
+  manifest.author = '问间';
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const icon = await makeWindowsIcon();
   return { icon, version: manifest.version };
