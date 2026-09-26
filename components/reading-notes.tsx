@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronDown, CornerDownRight, Lightbulb, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -12,11 +12,13 @@ import type { Notebook, ReadingNote, Thought, ThoughtReply } from "@/lib/noteboo
 
 type Props = {
   data: Notebook;
-  questionId: string;
+  questionId: string | null;
   saving: boolean;
   save: (next: Notebook, feedback: string) => Promise<boolean>;
   onOpenBook?: (bookId: string, sourceLocation?: string) => void;
   initialId?: string | null;
+  initialThoughtId?: string | null;
+  onClose?: () => void;
 };
 
 const origins = ["自己的思考", "材料触发的想法", "引用他人观点"];
@@ -25,9 +27,10 @@ const keyOf = (value: string) => clean(value).toLocaleLowerCase("zh-CN");
 const when = (at: string) => new Date(at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const excerpt = (text: string, length = 90) => text.length > length ? `${text.slice(0, length)}…` : text;
 
-export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initialId }: Props) {
-  const notes = data.readingNotes.filter((note) => note.questionIds.includes(questionId));
-  const bookThoughts = data.bookThoughts.filter((entry) => entry.questionIds.includes(questionId));
+export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initialId, initialThoughtId, onClose }: Props) {
+  const standalone = questionId === null;
+  const notes = useMemo(() => standalone ? [] : data.readingNotes.filter((note) => note.questionIds.includes(questionId)), [data.readingNotes, questionId, standalone]);
+  const bookThoughts = useMemo(() => standalone ? [] : data.bookThoughts.filter((entry) => entry.questionIds.includes(questionId)), [data.bookThoughts, questionId, standalone]);
   const [expanded, setExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -43,9 +46,12 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
   const [reason, setReason] = useState("");
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
-  useEffect(()=>{if(initialId&&data.readingNotes.some(note=>note.id===initialId&&note.questionIds.includes(questionId))){setExpanded(true);setSelectedId(initialId);}},[initialId,questionId,data.readingNotes]);
+  const initialNote = data.readingNotes.find((note) => note.id === initialId && (standalone || note.questionIds.includes(questionId)));
+  const targetThoughtRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(()=>{if(initialNote){setExpanded(true);setSelectedId(initialNote.id);}},[initialNote,questionId]);
 
   const selected = data.readingNotes.find((note) => note.id === selectedId);
+  useEffect(()=>{if(!selected?.thoughts.some(entry=>entry.id===initialThoughtId))return;const frame=requestAnimationFrame(()=>targetThoughtRef.current?.scrollIntoView({block:"center",behavior:"smooth"}));return()=>cancelAnimationFrame(frame);},[selected?.id,selected?.thoughts,initialThoughtId]);
   const books = useMemo(() => Array.from(new Set(data.readingNotes.map((note) => clean(note.book)))), [data.readingNotes]);
   const authors = useMemo(() => Array.from(new Set(data.readingNotes.map((note) => clean(note.author)))), [data.readingNotes]);
   const chapters = useMemo(() => Array.from(new Set(data.readingNotes.filter((note) => keyOf(note.book) === keyOf(book)).map((note) => clean(note.chapter)))), [data.readingNotes, book]);
@@ -66,6 +72,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
 
   async function createNote(event: React.FormEvent) {
     event.preventDefault();
+    if (questionId === null) return;
     const newNote: ReadingNote = {
       id: crypto.randomUUID(), questionIds: [questionId], book: clean(book), author: clean(author), chapter: clean(chapter), locator: clean(locator),
       quote: quote.trim(), interpretation: interpretation.trim(), at: new Date().toISOString(), thoughts: [],
@@ -93,7 +100,8 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
   const replyingThought = selected?.thoughts.find((entry) => entry.id === replyingId);
   const replyRecord = data.thoughtReplies.find((reply) => reply.thoughtId === replyingId);
 
-  return <section className="reading-section">
+  return <>
+    {!standalone && <section className="reading-section">
     <div className="reading-heading"><button type="button" className="reading-toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><BookOpen size={17}/><strong>阅读笔记</strong><span>{notes.length+bookThoughts.length}</span><ChevronDown size={16}/></button>{expanded && <Button variant="outline" size="sm" onClick={() => setCreating(true)}><Plus/>摘录原文</Button>}</div>
     {expanded && <>{!groups.length&&!bookThoughts.length && <p className="reading-empty">暂无阅读笔记</p>}
     <div className="book-groups">{groups.map((group) => <section className="book-group" key={`${group.book}|${group.author}`}>
@@ -104,7 +112,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
           <span>{reading.locator || "原文"}</span><p>{excerpt(reading.quote)}</p><footer>{reading.thoughts.length ? `${reading.thoughts.length} 条后续思考` : "查看理解"}</footer>
         </button>)}</div>
       </details>)}
-    </section>)}</div>{!!bookThoughts.length&&<section className="linked-book-thoughts"><h3><Lightbulb size={15}/>来自书籍的思考</h3>{bookThoughts.map(entry=><button type="button" key={entry.id} disabled={!entry.libraryBookId||!onOpenBook} onClick={()=>entry.libraryBookId&&onOpenBook?.(entry.libraryBookId,entry.sourceLocation)}><span>《{entry.bookTitle}》{entry.locator?` · ${entry.locator}`:' · 全书'}</span><p>{entry.text}</p><small>{entry.thoughts.length?`${entry.thoughts.length} 条后续思考 · `:''}{when(entry.at)}</small></button>)}</section>}</>}
+    </section>)}</div>{!!bookThoughts.length&&<section className="linked-book-thoughts"><h3><Lightbulb size={15}/>来自书籍的思考</h3>{bookThoughts.map(entry=><button type="button" key={entry.id} disabled={!entry.libraryBookId||!onOpenBook} onClick={()=>entry.libraryBookId&&onOpenBook?.(entry.libraryBookId,entry.sourceLocation)}><span>《{entry.bookTitle}》{entry.scope==='book'?' · 全书':` · ${[entry.chapter,entry.locator].filter(Boolean).join(' · ')||'阅读位置'}`}</span>{entry.quote&&<blockquote>{excerpt(entry.quote,120)}</blockquote>}<p>{entry.text}</p><small>{entry.thoughts.length?`${entry.thoughts.length} 条后续思考 · `:''}{when(entry.at)}</small></button>)}</section>}</>}
 
     <Dialog open={creating} onOpenChange={setCreating}><DialogContent className="reading-create-dialog"><DialogTitle>摘录原文</DialogTitle><DialogDescription>每段原文独立保存，同一本书的同一章节会自动集合。</DialogDescription><form onSubmit={createNote} className="reading-create-form">
       <div className="source-fields"><label>书名<Input list="reading-books" value={book} onChange={(e) => setBook(e.target.value)} required/><datalist id="reading-books">{books.map((value) => <option key={value} value={value}/>)}</datalist></label><label>作者（可选）<Input list="reading-authors" value={author} onChange={(e) => setAuthor(e.target.value)}/><datalist id="reading-authors">{authors.map((value) => <option key={value} value={value}/>)}</datalist></label></div>
@@ -113,15 +121,16 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
       <label>我的理解<Textarea value={interpretation} onChange={(e) => setInterpretation(e.target.value)} rows={5} required/></label>
       <div className="form-actions"><Button type="button" variant="ghost" onClick={() => setCreating(false)} disabled={saving}>取消</Button><Button type="submit" disabled={saving}><Check/>保存</Button></div>
     </form></DialogContent></Dialog>
+    </section>}
 
-    <Sheet open={!!selected} onOpenChange={(open) => { if (!open) setSelectedId(null); }}><SheetContent className="reading-sheet"><div className="reading-sheet-head"><span>{selected?.book}{selected?.chapter ? ` · ${selected.chapter}` : ""}</span><SheetTitle>阅读笔记</SheetTitle><SheetDescription>{[selected?.author,selected?.locator].filter(Boolean).join(" · ")}</SheetDescription></div>{selected && <div className="reading-sheet-scroll">
+    <Sheet open={!!selected} onOpenChange={(open) => { if (!open) { setSelectedId(null); setReplyingId(null); if (standalone) onClose?.(); } }}><SheetContent className="reading-sheet"><div className="reading-sheet-head"><span>{selected?.book}{selected?.chapter ? ` · ${selected.chapter}` : ""}</span><SheetTitle>阅读笔记</SheetTitle><SheetDescription>{[selected?.author,selected?.locator].filter(Boolean).join(" · ")}</SheetDescription></div>{selected && <div className="reading-sheet-scroll">
       <section className="reading-quote"><span>原文</span><blockquote>{selected.quote}</blockquote></section>
       <section className="reading-interpretation"><span>我的理解</span><p>{selected.interpretation}</p><small>{when(selected.at)}</small></section>
       {selected.libraryBookId&&onOpenBook&&<Button variant="outline" className="reading-back-to-book" onClick={()=>onOpenBook(selected.libraryBookId!,selected.sourceLocation)}><BookOpen/>回到原文</Button>}
-      {!!selected.thoughts.length && <section className="reading-thoughts"><h3>后来想到的</h3>{selected.thoughts.map((entry) => { const reply = data.thoughtReplies.find((item) => item.thoughtId === entry.id); return <button type="button" key={entry.id} onClick={() => { setReplyingId(entry.id); setReplyText(""); }}><small>{when(entry.at)} · {entry.origin}</small><p>{entry.text}</p>{entry.reason && <aside><strong>为什么改变判断</strong><p>{entry.reason}</p></aside>}<span className="thought-reply-state">{reply ? `已回答 · ${when(reply.at)}` : "回应这条思考"}</span></button>; })}</section>}
+      {!!selected.thoughts.length && <section className="reading-thoughts"><h3>后来想到的</h3>{selected.thoughts.map((entry) => { const reply = data.thoughtReplies.find((item) => item.thoughtId === entry.id); const targeted=entry.id===initialThoughtId; return <button type="button" key={entry.id} ref={targeted?targetThoughtRef:undefined} aria-current={targeted?"true":undefined} style={targeted?{backgroundColor:"#f5f8ee",outline:"2px solid #b8ca9f",outlineOffset:2}:undefined} onClick={() => { setReplyingId(entry.id); setReplyText(""); }}><small>{when(entry.at)} · {entry.origin}</small><p>{entry.text}</p>{entry.reason && <aside><strong>为什么改变判断</strong><p>{entry.reason}</p></aside>}<span className="thought-reply-state">{reply ? `已回答 · ${when(reply.at)}` : "回应这条思考"}</span></button>; })}</section>}
       <form className="reading-append" onSubmit={appendThought}><label>添加思考<Textarea value={thought} onChange={(e) => setThought(e.target.value)} rows={6} required placeholder="继续写下你的理解…"/></label><div><NativeSelect aria-label="思考来源" value={origin} onChange={(e) => setOrigin(e.target.value)}>{origins.map((value) => <NativeSelectOption key={value}>{value}</NativeSelectOption>)}</NativeSelect><label><input type="checkbox" checked={changed} onChange={(e) => setChanged(e.target.checked)}/>我改变了原来的判断</label></div>{changed && <label>为什么改变？<Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} required/></label>}<Button type="submit" disabled={saving || !thought.trim() || (changed && !reason.trim())}><CornerDownRight/>保存思考</Button></form>
     </div>}</SheetContent></Sheet>
 
     <Dialog open={!!replyingId} onOpenChange={(open) => { if (!open && !saving) { setReplyingId(null); setReplyText(""); } }}><DialogContent className="thought-reply-dialog"><DialogTitle>回应这条思考</DialogTitle><DialogDescription>{replyingThought ? `${when(replyingThought.at)} · ${replyingThought.origin}` : ""}</DialogDescription>{replyingThought && <blockquote>{replyingThought.text}</blockquote>}{replyRecord ? <section className="saved-thought-reply"><span>我的回答 · {when(replyRecord.at)}</span><p>{replyRecord.text}</p></section> : <form onSubmit={saveReply}><label>我的回答<Textarea value={replyText} onChange={(event) => setReplyText(event.target.value)} rows={7} autoFocus required placeholder="写下此刻对它的回应…"/></label><div className="form-actions"><Button type="button" variant="ghost" disabled={saving} onClick={() => { setReplyingId(null); setReplyText(""); }}>取消</Button><Button type="submit" disabled={saving || !replyText.trim()}><CornerDownRight/>保存回答</Button></div></form>}</DialogContent></Dialog>
-  </section>;
+  </>;
 }
