@@ -1,0 +1,14 @@
+.core-onboarding{min-height:100dvh;display:grid;place-items:center;padding:40px 24px;background:#f7f8f5;color:#344b55}
+.core-onboarding>section{width:min(100%,520px);padding-bottom:8vh}
+.core-onboarding-wordmark{font:600 25px/1.5 "Songti SC",serif;letter-spacing:.16em;margin-bottom:54px;color:#52646c}
+.core-onboarding-wordmark span{color:#927665}
+.core-onboarding h1{font:500 clamp(23px,3vw,29px)/1.7 "Songti SC",serif;margin-bottom:28px;letter-spacing:.04em}
+.core-question-form{display:flex;flex-direction:column;gap:16px}
+.core-question-form label{display:grid;gap:9px;font-size:13px;color:#65737b}
+.core-question-form textarea{background:#ffffffa8;border:1px solid #d4dee0;border-radius:9px;padding:14px 16px;line-height:1.9;resize:vertical;font-size:15px;max-height:38vh}
+.core-question-form>button{align-self:flex-end;min-height:40px;margin-top:8px;background:#506975;color:#fff;border-radius:8px;padding:0 20px}
+.core-question-form>button:hover{background:#405c69}
+.core-question-error{color:#a24e40;line-height:1.7;font-size:13px;white-space:pre-wrap}
+.core-settings-dialog{width:min(520px,calc(100vw - 40px))!important;max-height:calc(100dvh - 48px);overflow:auto;background:#f8faf7}
+.sync-menu .core-settings-menu{border-top:1px solid #e4e7e3;margin-top:6px;padding-top:12px}
+.core-load-state{min-height:100dvh;display:grid;place-content:center;gap:18px;background:#f7f8f5;color:#60717b;text-align:center;padding:30px}

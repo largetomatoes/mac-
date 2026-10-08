@@ -29,6 +29,7 @@ export function GlobalSearch({open,onOpenChange,data,onOpenItem,onOpenReading,on
  const [ocrMatches,setOcrMatches]=useState<{query:string;source:Notebook['ocrCache']|null;items:SearchHit<SearchResult>[]}>({query:'',source:null,items:[]});
  const documents=useMemo(()=>{
   const items:SearchResult[]=[];
+  if(!open)return items;
   const replies=new Map(data.thoughtReplies.map(reply=>[reply.thoughtId,reply]));
   const noteById=new Map(data.notes.map(note=>[note.id,note]));
   const bookById=new Map(data.libraryBooks.map(book=>[book.id,book]));
@@ -48,7 +49,7 @@ export function GlobalSearch({open,onOpenChange,data,onOpenItem,onOpenReading,on
    const number=note.id===ROOT?'核心问题':note.kind==='question'?`${numberOf(note,data.notes,data.crossThoughts)} · 问题`:place('回答',parent?short(parent.title,45):undefined);
    add({id:`note:${note.id}`,kind:'note',label:number,title:note.title,fields:[field(note.title,1.2),field(note.body),field(note.source,.6)],open:()=>onOpenItem(note.id)});
    addThoughts(`note:${note.id}`,'note',number,note.title,note.thoughts||[],(thoughtId,replyId)=>onOpenItem(note.id,thoughtId,replyId));
-   note.revisions.forEach((revision,index)=>add({id:`note:${note.id}:revision:${index}`,kind:'note',label:place(number,'过往修订'),title:revision.title||note.title,fields:[field(revision.title),field(revision.body),field(revision.reason)],open:()=>onOpenItem(note.id)}));
+   note.revisions.forEach((revision,index)=>add({id:`note:${note.id}:revision:${index}`,kind:'note',label:place(number,'过往修订'),title:revision.title||note.title,fields:[field(revision.title),field(revision.nextTitle||''),field(revision.body),field(revision.reason)],open:()=>onOpenItem(note.id)}));
   }
   for(const cross of data.crossThoughts){
    const label=place(`${crossNumber(cross)} · 交叉思考`,short(crossSignature(cross,data),65));
@@ -80,7 +81,12 @@ export function GlobalSearch({open,onOpenChange,data,onOpenItem,onOpenReading,on
    add({id:`manuscript:${manuscript.id}`,kind:'manuscript',label:'文稿',title:manuscript.title,fields:[field(manuscript.title,1.2),field(manuscript.body)],open:()=>onOpenManuscript(manuscript.id)});
   }
   for(const book of data.libraryBooks){
-   add({id:`book:${book.id}`,kind:'book',label:book.format.toUpperCase(),title:book.title,fields:[field(book.title,1.2),field(book.author),field(book.originalName,.8)],open:()=>onOpenBook(book.id)});
+   add({id:`book:${book.id}`,kind:'book',label:book.format==='reference'?'文献':book.format.toUpperCase(),title:book.title,fields:[field(book.title,1.2),field(book.author),field(book.originalName,.8)],open:()=>onOpenBook(book.id)});
+  }
+  for(const book of data.libraryBooks){
+   for(const annotation of book.zotero?.annotations||[]){
+    add({id:`zotero:${book.id}:${annotation.attachmentKey}:${annotation.key}`,kind:'book',label:place('Zotero 摘录与批注',book.title,annotation.pageLabel?`第 ${annotation.pageLabel} 页`:undefined),title:`《${book.title}》`,fields:[field(annotation.text),field(annotation.comment,1.1),field(book.title,.5)],open:()=>onOpenBook(book.id,`zotero:${annotation.key}`)});
+   }
   }
   for(const highlight of data.libraryHighlights){
    const book=bookById.get(highlight.libraryBookId);
@@ -88,7 +94,7 @@ export function GlobalSearch({open,onOpenChange,data,onOpenItem,onOpenReading,on
    add({id:`highlight:${highlight.id}`,kind:'book',label:place('原文高亮',book.title,highlight.locator),title:`《${book.title}》`,fields:[field(highlight.quote,1.1)],open:()=>onOpenBook(book.id,highlight.sourceLocation)});
   }
   return items;
- },[data,onOpenItem,onOpenReading,onOpenManuscript,onOpenBook,onOpenDetachedBookThought]);
+ },[open,data,onOpenItem,onOpenReading,onOpenManuscript,onOpenBook,onOpenDetachedBookThought]);
  useEffect(()=>{
   const terms=deferredQuery.trim().toLocaleLowerCase('zh-CN').split(/\s+/).filter(Boolean);
   if(!open||!terms.length||terms.join('').length<2||!data.ocrCache.length)return;

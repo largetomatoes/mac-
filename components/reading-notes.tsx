@@ -1,5 +1,6 @@
 "use client";
 
+import {ReadingNoteLinks} from "@/components/reading-note-links";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronDown, CornerDownRight, Lightbulb, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ type Props = {
   questionId: string | null;
   saving: boolean;
   save: (next: Notebook, feedback: string) => Promise<boolean>;
-  onOpenBook?: (bookId: string, sourceLocation?: string) => void;
+  onOpenBook?: (bookId: string, sourceLocation?: string, readingId?:string) => void;
   initialId?: string | null;
   initialThoughtId?: string | null;
   onClose?: () => void;
@@ -31,6 +32,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
   const standalone = questionId === null;
   const notes = useMemo(() => standalone ? [] : data.readingNotes.filter((note) => note.questionIds.includes(questionId)), [data.readingNotes, questionId, standalone]);
   const bookThoughts = useMemo(() => standalone ? [] : data.bookThoughts.filter((entry) => entry.questionIds.includes(questionId)), [data.bookThoughts, questionId, standalone]);
+  const [linkingId,setLinkingId]=useState<string|null>(null);
   const [expanded, setExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -123,10 +125,12 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
     </form></DialogContent></Dialog>
     </section>}
 
+    {linkingId&&data.readingNotes.find(n=>n.id===linkingId)&&<ReadingNoteLinks key={linkingId} note={data.readingNotes.find(n=>n.id===linkingId)!} data={data} saving={saving} save={save} onClose={()=>setLinkingId(null)}/>}
     <Sheet open={!!selected} onOpenChange={(open) => { if (!open) { setSelectedId(null); setReplyingId(null); if (standalone) onClose?.(); } }}><SheetContent className="reading-sheet"><div className="reading-sheet-head"><span>{selected?.book}{selected?.chapter ? ` · ${selected.chapter}` : ""}</span><SheetTitle>阅读笔记</SheetTitle><SheetDescription>{[selected?.author,selected?.locator].filter(Boolean).join(" · ")}</SheetDescription></div>{selected && <div className="reading-sheet-scroll">
       <section className="reading-quote"><span>原文</span><blockquote>{selected.quote}</blockquote></section>
       <section className="reading-interpretation"><span>我的理解</span><p>{selected.interpretation}</p><small>{when(selected.at)}</small></section>
-      {selected.libraryBookId&&onOpenBook&&<Button variant="outline" className="reading-back-to-book" onClick={()=>onOpenBook(selected.libraryBookId!,selected.sourceLocation)}><BookOpen/>回到原文</Button>}
+      <Button variant="ghost" onClick={()=>setLinkingId(selected.id)}>关联问题 · {selected.questionIds.length}</Button>
+      {selected.libraryBookId&&onOpenBook&&<Button variant="outline" className="reading-back-to-book" onClick={()=>onOpenBook(selected.libraryBookId!,selected.sourceLocation,selected.id)}><BookOpen/>回到原文</Button>}
       {!!selected.thoughts.length && <section className="reading-thoughts"><h3>后来想到的</h3>{selected.thoughts.map((entry) => { const reply = data.thoughtReplies.find((item) => item.thoughtId === entry.id); const targeted=entry.id===initialThoughtId; return <button type="button" key={entry.id} ref={targeted?targetThoughtRef:undefined} aria-current={targeted?"true":undefined} style={targeted?{backgroundColor:"#f5f8ee",outline:"2px solid #b8ca9f",outlineOffset:2}:undefined} onClick={() => { setReplyingId(entry.id); setReplyText(""); }}><small>{when(entry.at)} · {entry.origin}</small><p>{entry.text}</p>{entry.reason && <aside><strong>为什么改变判断</strong><p>{entry.reason}</p></aside>}<span className="thought-reply-state">{reply ? `已回答 · ${when(reply.at)}` : "回应这条思考"}</span></button>; })}</section>}
       <form className="reading-append" onSubmit={appendThought}><label>添加思考<Textarea value={thought} onChange={(e) => setThought(e.target.value)} rows={6} required placeholder="继续写下你的理解…"/></label><div><NativeSelect aria-label="思考来源" value={origin} onChange={(e) => setOrigin(e.target.value)}>{origins.map((value) => <NativeSelectOption key={value}>{value}</NativeSelectOption>)}</NativeSelect><label><input type="checkbox" checked={changed} onChange={(e) => setChanged(e.target.checked)}/>我改变了原来的判断</label></div>{changed && <label>为什么改变？<Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} required/></label>}<Button type="submit" disabled={saving || !thought.trim() || (changed && !reason.trim())}><CornerDownRight/>保存思考</Button></form>
     </div>}</SheetContent></Sheet>

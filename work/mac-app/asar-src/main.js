@@ -1,3 +1,7 @@
+const { validSettings, validateCoreTransition, validateReadingTransition } = require('./notebook-settings.cjs');
+const {validOcrEntry,mergeOcrPage}=require('./ocr-cache.cjs');
+let notebookQueue=Promise.resolve();
+function serializeNotebook(operation){const result=notebookQueue.then(operation);notebookQueue=result.catch(()=>{});return result;}
 const { app, BrowserWindow, Menu, dialog, shell, session, safeStorage } = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -8,7 +12,11 @@ const { URL } = require('node:url');
 const { createAnnotatedPdf } = require('./pdf-export');
 const { MAGIC: BACKUP_MAGIC, exportCompleteBackup, inspectCompleteBackup, restoreCompleteBackup } = require('./complete-backup');
 const { createOssArchiveClient, validateOssConfig } = require('./oss-cloud');
+const {isolateLegacyNotebook}=require('./local-sync-migration.cjs');
+const {createNutstoreClient,validateNutstoreConfig,nutstoreTarget}=require('./nutstore-sync.cjs');
 const { prepareLocalLibrary } = require('./library-location');
+const { importLibraryFile } = require('./library-import');
+const { readZoteroCatalog } = require('./zotero-local');
 
 let mainWindow = null;
 let server = null;
@@ -22,6 +30,7 @@ let draftsPath = null;
 let draftQueue = Promise.resolve();
 let cloudJob = { state: 'idle' };
 let cloudBusy = false;
+let zoteroCatalogJob = null;
 const MAX_DRAFT_BYTES = 32 * 1024 * 1024;
 
 app.commandLine.appendSwitch('disable-background-networking');
@@ -35,7 +44,7 @@ app.commandLine.appendSwitch('proxy-bypass-list', 'localhost;127.0.0.1;[::1]');
 app.commandLine.appendSwitch('host-resolver-rules', 'MAP * 0.0.0.0, EXCLUDE localhost');
 app.setName('问间');
 if (process.env.WENJIAN_TEST_DATA_DIR) app.setPath('userData', process.env.WENJIAN_TEST_DATA_DIR);
-app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: '1.12.0', version: '25', copyright: '私人本地笔记应用' });
+app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: app.getVersion(), version: app.getVersion(), copyright: '围绕核心问题的本地笔记应用' });
 
 async function resolveStorageDirectory() {
   const localDir = app.getPath('userData');
@@ -49,10 +58,10 @@ async function resolveStorageDirectory() {
     if (error.code !== 'ENOENT') throw new Error('同步目录配置无法读取，请检查 sync-config.json。');
   }
   if (config) {
-    if (config.provider !== 'nutstore' || typeof config.dataDirectory !== 'string' || !path.isAbsolute(config.dataDirectory)) throw new Error('同步目录配置不正确，请检查 sync-config.json。');
+    if (!['nutstore','local'].includes(config.provider) || typeof config.dataDirectory !== 'string' || !path.isAbsolute(config.dataDirectory)) throw new Error('同步目录配置不正确，请检查 sync-config.json。');
     const stat = await fsp.stat(config.dataDirectory).catch(() => null);
     if (!stat?.isDirectory()) throw new Error('原来的坚果云目录暂时不可用。请先恢复目录连接，问间不会打开其他位置的数据。');
-    return { directory: config.dataDirectory, mode: 'nutstore' };
+    return { directory: config.dataDirectory, mode: config.provider };
   }
   try {
     await fsp.access(path.join(defaultNutstoreDir, '.wenjian-sync.json'));
@@ -73,7 +82,7 @@ function jsonReply(response, status, body) {
   response.end(JSON.stringify(body));
 }
 function validNotebookData(data) {
-  return data && typeof data === 'object' && ['notes', 'cards', 'readingNotes', 'crossThoughts', 'thoughtReplies', 'manuscripts', 'libraryBooks', 'libraryHighlights', 'ocrCache', 'bookThoughts', 'links', 'dismissedSuggestions'].every((key) => Array.isArray(data[key])) && data.notes.length > 0;
+  return validSettings(data) && data && typeof data === 'object' && ['notes', 'cards', 'readingNotes', 'crossThoughts', 'thoughtReplies', 'manuscripts', 'libraryBooks', 'libraryHighlights', 'ocrCache', 'bookThoughts', 'links', 'dismissedSuggestions'].every((key) => Array.isArray(data[key])) && data.notes.length > 0 && (data.libraryFolders === undefined || (Array.isArray(data.libraryFolders) && data.libraryFolders.length <= 5000 && data.libraryFolders.every((folder) => folder && typeof folder.id === 'string' && folder.id.trim() && folder.id.length <= 100 && typeof folder.name === 'string' && folder.name.trim() && folder.name.length <= 100) && new Set(data.libraryFolders.map((folder) => folder.id)).size === data.libraryFolders.length));
 }
 function normalizeNotebookData(data) {
   return { ...data, thoughtReplies: data.thoughtReplies || [], manuscripts: data.manuscripts || [], libraryBooks: (data.libraryBooks || []).map((book) => ({ ...book, pdfChapters: (book.pdfChapters || []).filter((chapter) => chapter && typeof chapter.title === 'string' && Number.isInteger(chapter.startPage) && chapter.startPage > 0) })), libraryHighlights: data.libraryHighlights || [], ocrCache: data.ocrCache || [], bookThoughts: (data.bookThoughts || []).map((entry) => ({ ...entry, scope: entry.scope || 'book', locator: entry.locator || '', quote: entry.quote || undefined, chapter: entry.chapter || undefined, questionIds: entry.questionIds || [], thoughts: entry.thoughts || [] })), links: data.links || [], dismissedSuggestions: data.dismissedSuggestions || [] };
@@ -85,6 +94,7 @@ async function readStore() {
   return value;
 }
 async function writeStore(value) {
+  if(value.sync===undefined){const previous=JSON.parse(await fsp.readFile(dataPath,"utf8"));if(previous.sync)value={...value,sync:previous.sync,syncRevision:previous.syncRevision||0};}
   const temporary = `${dataPath}.new`;
   const backup = `${dataPath}.backup`;
   const backupTemporary = `${backup}.new-${crypto.randomUUID()}`;
@@ -182,7 +192,7 @@ function deleteQuestion(data, id) {
     ...data,
     notes: data.notes.filter((note) => !ids.has(note.id)), readingNotes, bookThoughts: data.bookThoughts.map((entry) => ({ ...entry, questionIds: entry.questionIds.filter((questionId) => !ids.has(questionId)) })), crossThoughts,
     thoughtReplies: (data.thoughtReplies || []).filter((reply) => !thoughtIds.has(reply.thoughtId)),
-    manuscripts: (data.manuscripts || []).map((manuscript) => ({ ...manuscript, links: (manuscript.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)) })),
+    manuscripts: (data.manuscripts || []).map((manuscript) => ({ ...manuscript, links: (manuscript.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)), ...(manuscript.blocks ? { blocks: manuscript.blocks.map((block) => ({ ...block, links: (block.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)) })) } : {}) })),
     links: data.links.filter((link) => !ids.has(link.from) && !ids.has(link.to)),
     dismissedSuggestions: data.dismissedSuggestions.filter((suggestion) => ![...ids].some((removedId) => suggestion.endsWith(`:${removedId}`)))
   };
@@ -195,8 +205,16 @@ async function handleApi(request, response) {
     const input = await requestBody(request);
     const current = await readStore();
     if (!Number.isInteger(input.version) || input.version !== current.version) return jsonReply(response, 409, { error: '另一窗口已保存新内容。请先复制当前输入，再重新载入。' });
+    if(request.method==='PATCH'){
+      if(!validOcrEntry(input.entry))return jsonReply(response,400,{error:'本页识别结果格式不正确，文字仍保留在待保存列表。'});
+      if(!current.data.libraryBooks.some(book=>book.id===input.entry.libraryBookId&&book.format==='pdf'))return jsonReply(response,404,{error:'这本书已经移除。'});
+      const data=mergeOcrPage(current.data,input.entry),version=current.version+1;
+      await writeStore({version,data});return jsonReply(response,200,{version,data});
+    }
     if (request.method === 'PUT') {
       if (!validNotebookData(input.data)) return jsonReply(response, 400, { error: '笔记数据格式不正确。' });
+      const coreError = validateCoreTransition(current.data, input.data) || validateReadingTransition(current.data, input.data);
+      if (coreError) return jsonReply(response, 400, { error: coreError });
       await writeStore({ version: current.version + 1, data: input.data });
       return jsonReply(response, 200, { version: current.version + 1 });
     }
@@ -252,11 +270,9 @@ async function handleLibraryImport(request, response) {
     const source = chosen.filePaths[0];
     const format = path.extname(source).toLowerCase().slice(1);
     if (!['pdf', 'epub'].includes(format)) return jsonReply(response, 400, { error: '请选择 PDF 或 EPUB 文件。' });
-    const id = crypto.randomUUID();
-    const storedFile = `${id}.${format}`;
-    await fsp.copyFile(source, path.join(libraryDir, storedFile));
-    const originalName = path.basename(source);
-    return jsonReply(response, 200, { imported: true, book: { id, title: path.basename(source, path.extname(source)), author: '', format, storedFile, originalName, addedAt: new Date().toISOString(), progress: {} } });
+    const current = await readStore();
+    const book = await importLibraryFile({ source, libraryDir, books: current.data.libraryBooks });
+    return jsonReply(response, 200, { imported: true, book });
   } catch (error) {
     console.error(error);
     return jsonReply(response, 500, { error: '书籍没有导入，请重试。' });
@@ -296,13 +312,19 @@ async function handleLibraryDelete(request, response) {
     if (!Number.isInteger(input.version) || input.version !== current.version) return jsonReply(response, 409, { error: '另一窗口已保存新内容。请先重新载入。' });
 	    const book = current.data.libraryBooks.find((entry) => entry.id === input.id);
     if (!input.confirmed || input.confirmation !== '删除' || !book || book.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
-    if (path.basename(book.storedFile) !== book.storedFile) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
-    originalFile = path.join(libraryDir, book.storedFile);
-    stagedFile = `${originalFile}.deleting-${crypto.randomUUID()}`;
-    try { await fsp.rename(originalFile, stagedFile); } catch (error) { if (error.code !== 'ENOENT') throw error; stagedFile = null; }
-	    const replacementBook = current.data.libraryBooks.find((entry) => entry.id !== book.id && entry.format === book.format && entry.originalName === book.originalName);
+    if (typeof book.storedFile !== 'string' || path.basename(book.storedFile) !== book.storedFile || (book.storedFile && !/\.(pdf|epub)$/i.test(book.storedFile)) || (!book.storedFile && book.format !== 'reference')) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
+    const sharedOriginal = current.data.libraryBooks.some((entry) => entry.id !== book.id && entry.storedFile === book.storedFile);
+    if (book.storedFile && !sharedOriginal) {
+      originalFile = path.join(libraryDir, book.storedFile);
+      const originalStat = await fsp.lstat(originalFile).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+      if (originalStat && !originalStat.isFile()) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
+      stagedFile = `${originalFile}.deleting-${crypto.randomUUID()}`;
+      try { await fsp.rename(originalFile, stagedFile); } catch (error) { if (error.code !== 'ENOENT') throw error; stagedFile = null; }
+    }
+	    const replacementBook = book.storedFile && current.data.libraryBooks.find((entry) => entry.id !== book.id && entry.storedFile === book.storedFile);
 	    const data = {
       ...current.data,
+      dismissedSuggestions: book.zotero ? [...new Set([...current.data.dismissedSuggestions, `zotero:${encodeURIComponent(book.zotero.serverId)}:${encodeURIComponent(book.zotero.itemKey)}`])] : current.data.dismissedSuggestions,
       libraryBooks: current.data.libraryBooks.filter((entry) => entry.id !== book.id),
       libraryHighlights: current.data.libraryHighlights.filter((entry) => entry.libraryBookId !== book.id),
       ocrCache: current.data.ocrCache.filter((entry) => entry.libraryBookId !== book.id),
@@ -337,9 +359,10 @@ async function handleLibraryFile(request, response, pathname) {
     const id = decodeURIComponent(pathname.slice('/api/library/file/'.length));
     const store = await readStore();
     const book = (store.data.libraryBooks || []).find((entry) => entry.id === id);
-    if (!book || path.basename(book.storedFile) !== book.storedFile) { response.writeHead(404); response.end(); return; }
+    if (!book || !book.storedFile || book.format === 'reference' || path.basename(book.storedFile) !== book.storedFile || !/\.(pdf|epub)$/i.test(book.storedFile)) { response.writeHead(404); response.end(); return; }
     const filePath = path.join(libraryDir, book.storedFile);
     const stat = await fsp.stat(filePath);
+    if (!stat.isFile()) { response.writeHead(404); response.end(); return; }
     const contentType = mimeTypes[path.extname(filePath)] || 'application/octet-stream';
     const range = request.headers.range;
     if (range) {
@@ -355,6 +378,55 @@ async function handleLibraryFile(request, response, pathname) {
     response.writeHead(200, { 'Content-Type': contentType, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' });
     fs.createReadStream(filePath).pipe(response);
   } catch { response.writeHead(404); response.end(); }
+}
+
+async function handleZotero(request, response, pathname) {
+  const origin = `http://127.0.0.1:${localPort}`;
+  if (request.headers.host !== `127.0.0.1:${localPort}` || (request.headers.origin && request.headers.origin !== origin) || request.headers['sec-fetch-site'] === 'cross-site') {
+    return jsonReply(response, 403, { error: '仅允许问间连接本机 Zotero。' });
+  }
+  try {
+    if (pathname === '/api/zotero/catalog' && request.method === 'GET') {
+      if (restoringBackup) return jsonReply(response, 423, { error: '正在恢复备份，请稍候。' });
+      if (!zoteroCatalogJob) {
+        zoteroCatalogJob = readStore().then(store => {
+          if (store.data.setupCompleted === false || store.data.zoteroEnabled === false) throw Object.assign(new Error('请先在书库中选择连接 Zotero。'), { code: 'NOT_ENABLED' });
+          return readZoteroCatalog({ libraryDir, existingBooks: store.data.libraryBooks });
+        });
+        zoteroCatalogJob.finally(() => { zoteroCatalogJob = null; }).catch(() => {});
+      }
+      return jsonReply(response, 200, await zoteroCatalogJob);
+    }
+    if (pathname === '/api/zotero/open' && request.method === 'POST') {
+      const input = await requestBody(request);
+      const store = await readStore();
+      const book = store.data.libraryBooks.find(entry => entry.id === input.bookId);
+      const source = book?.zotero;
+      const validKey = value => typeof value === 'string' && /^[A-Z0-9]{8}$/.test(value);
+      if (!source || source.library !== 'users/0' || !validKey(source.itemKey)) return jsonReply(response, 404, { error: '没有找到对应的 Zotero 文献。' });
+      const annotation = input.annotationKey ? source.annotations.find(entry => entry.key === input.annotationKey) : undefined;
+      if (input.annotationKey && (!annotation || !validKey(annotation.key))) return jsonReply(response, 404, { error: '没有找到对应的 Zotero 批注。' });
+      const probe = await fetch(`http://127.0.0.1:23119/api/users/0/items/${source.itemKey}?format=json`, { redirect: 'manual', signal: AbortSignal.timeout(5000), headers: { 'Zotero-API-Version': '3', 'Zotero-Server-ID': source.serverId } }).catch(() => null);
+      if (!probe) return jsonReply(response, 503, { error: '请先打开本机 Zotero，再回到原文。' });
+      const sameLibrary = probe.headers.get('Zotero-Server-ID') === source.serverId;
+      await probe.body?.cancel();
+      if (probe.status === 412 || !sameLibrary) return jsonReply(response, 409, { error: '请打开这份文献原来所在的 Zotero 资料库。' });
+      if (!probe.ok) return jsonReply(response, 404, { error: '这份文献在 Zotero 中暂时不可用，已导入的摘录仍保留在问间。' });
+      const attachmentKey = annotation?.attachmentKey || source.attachmentKey;
+      let target = `zotero://select/library/items/${source.itemKey}`;
+      if (validKey(attachmentKey)) {
+        const query = new URLSearchParams();
+        if (Number.isInteger(annotation?.page) && annotation.page > 0) query.set('page', String(annotation.page));
+        if (annotation) query.set('annotation', annotation.key);
+        target = `zotero://open/library/items/${attachmentKey}${query.size ? `?${query}` : ''}`;
+      }
+      await shell.openExternal(target);
+      return jsonReply(response, 200, { opened: true });
+    }
+    return jsonReply(response, 405, { error: '不支持的 Zotero 操作。' });
+  } catch (error) {
+    return jsonReply(response, error.code === 'UNAVAILABLE' ? 503 : 502, { error: error.message || 'Zotero 暂时无法连接。', code: error.code || 'CONNECTION_ERROR' });
+  }
 }
 
 const cloudConfigPath = () => path.join(app.getPath('userData'), 'oss-config.json');
@@ -440,7 +512,9 @@ async function restoreCloudSnapshot(key) {
   if (!snapshots.some((entry) => entry.key === key)) throw new Error('云端没有找到这份备份。');
   const temporary = path.join(app.getPath('userData'), `oss-download-${crypto.randomUUID()}.wenjian-backup`);
   restoringBackup = true;
+    if (zoteroCatalogJob) await zoteroCatalogJob.catch(() => {});
   try {
+    await notebookQueue;
     await draftQueue;
     cloudJob = { ...cloudJob, stage: '正在下载并校验云端备份', progress: 0 };
     await client.downloadSnapshot({ key, destination: temporary, onProgress: (progress) => cloudProgress('正在下载并校验云端备份', progress) });
@@ -512,16 +586,91 @@ async function handleCloud(request, response, pathname) {
     return jsonReply(response, /正在进行|请先|没有找到|请确认|修改连接设置/.test(message) ? 409 : 500, { error: message });
   }
 }
+
+
+async function storedSyncConnection() {
+  try { return JSON.parse(await fsp.readFile(path.join(app.getPath('userData'),'device-sync-connection.json'),'utf8')); }
+  catch(error){if(error.code==='ENOENT')return {provider:'oss'};throw new Error('同步连接设置无法读取。');}
+}
+async function syncIdentity(){
+  const connection=await storedSyncConnection(),oss=await storedCloudConfig();
+  return {provider:connection.provider,configured:connection.provider==='nutstore'?!!connection.passwordCiphertext:!!oss,
+    target:connection.provider==='nutstore'?(connection.username?nutstoreTarget(connection):''):(oss?cloudTarget(oss):''),
+    username:connection.username||'',directory:'问间资料库',legacyFolder:storageMode==='nutstore'?storageDir:null};
+}
+async function activeSyncClient(target){
+  target=target||(await readStore()).sync?.target;
+  const identity=await syncIdentity();if(target&&target!==identity.target)throw new Error('同步位置已改变，本次传输取消。');
+  if(identity.provider==='oss')return createOssArchiveClient(await activeCloudConfig());
+  const stored=await storedSyncConnection();if(!stored.passwordCiphertext)throw new Error('请先填写坚果云邮箱和应用密码。');
+  if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储暂时不可用。');
+  return createNutstoreClient({username:stored.username,password:safeStorage.decryptString(Buffer.from(stored.passwordCiphertext,'base64'))});
+}
+async function saveSyncConnection(input){
+  if(!['oss','nutstore'].includes(input.provider))throw new Error('请选择同步服务。');
+  const current=await readStore(),old=await storedSyncConnection();let next={provider:input.provider},target='';
+  if(input.provider==='nutstore'){
+    if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储暂时不可用。');
+    const sameAccount=String(input.username||'').trim().toLowerCase()===old.username;
+    const password=input.password||(sameAccount&&old.passwordCiphertext?safeStorage.decryptString(Buffer.from(old.passwordCiphertext,'base64')):'');
+    const config=validateNutstoreConfig({username:input.username,password});target=nutstoreTarget(config);
+    next={...next,username:config.username,passwordCiphertext:safeStorage.encryptString(config.password).toString('base64')};
+  }else{const config=await storedCloudConfig();target=config?cloudTarget(config):'';}
+  if(current.sync?.target&&current.sync.target!==target)throw new Error('本资料库已连接另一个云端位置。为保留同步历史，请继续使用原连接；迁移需要另行处理。');
+  await atomicPrivateJson(path.join(app.getPath('userData'),'device-sync-connection.json'),next);return syncIdentity();
+}
+
+async function handleDeviceSync(request,response,url) {
+  const origin='http://127.0.0.1:'+localPort;
+  if(request.headers.host!=='127.0.0.1:'+localPort||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
+  try {
+    const route=url.pathname.slice('/api/sync/'.length);
+    if(route==='identity')return jsonReply(response,200,await syncIdentity());
+    if(route==='local')return jsonReply(response,200,{...await readStore(),storage:storageMode});
+    const input=await requestBody(request);
+    if(route==='settings')return await serializeNotebook(async()=>jsonReply(response,200,await saveSyncConnection(input)));
+    if(route==='test')return jsonReply(response,200,await (await activeSyncClient(input.target)).syncRemote({action:'list'}));
+    if(route==='open-folder'){if(storageMode!=='nutstore')throw new Error('没有连接坚果云本机目录。');const error=await shell.openPath(storageDir);if(error)throw new Error(error);return jsonReply(response,200,{ok:true});}
+    if(route==='commit')return await serializeNotebook(async()=>{
+      if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份'});
+      const current=await readStore();if(input.version!==current.version||(input.syncRevision||0)!==(current.syncRevision||0))return jsonReply(response,409,{error:'本机刚保存新内容，正在重新合并。'});
+      if(!validNotebookData(input.data)||input.sync?.schema!==1||!Array.isArray(input.sync.operations)||!Array.isArray(input.sync.pending))return jsonReply(response,400,{error:'同步资料无效'});
+      if(storageMode==='nutstore'&&input.sync.enabled){
+        const directory=await isolateLegacyNotebook({localDir:app.getPath('userData'),legacyDir:storageDir,expected:current,readCurrent:readStore,saveConfig:config=>atomicPrivateJson(path.join(app.getPath('userData'),'sync-config.json'),config)});
+        storageDir=directory;dataPath=path.join(directory,'notebook.json');storageMode='local';
+      }
+      const value={version:current.version+(JSON.stringify(current.data)===JSON.stringify(input.data)?0:1),syncRevision:(current.syncRevision||0)+1,data:input.data,sync:input.sync};await writeStore(value);return jsonReply(response,200,{...value,storage:storageMode});
+    });
+    const active=()=>activeSyncClient(input.target);
+    if(route==='remote')return jsonReply(response,200,await (await active()).syncRemote(input));
+    if(route==='book'){
+      const book=(await readStore()).data.libraryBooks.find(b=>b.id===input.id);if(!book||!['pdf','epub'].includes(book.format)||!book.storedFile||path.basename(book.storedFile)!==book.storedFile)throw new Error('未找到书籍原文件。');
+      const destination=path.join(libraryDir,book.storedFile);
+      if(input.action==='status')return jsonReply(response,200,{available:fs.existsSync(destination)});
+      const client=await active();
+      if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
+      if(input.action==='upload'){
+        const cloudFile=await client.uploadBook(destination,book.format);
+        return await serializeNotebook(async()=>{const current=await readStore();const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data});return jsonReply(response,200,{cloudFile});});
+      }
+    }
+    return jsonReply(response,404,{error:'不支持的同步操作'});
+  }catch(error){return jsonReply(response,500,{error:error.message||'同步暂时无法完成'});}
+}
+
 async function startServer() {
   server = http.createServer((request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
-    if (url.pathname === '/api/notebook') handleApi(request, response);
+    if (url.pathname === '/api/backup/restore' && request.method === 'POST') { if(request.headers.origin && request.headers.origin !== `http://127.0.0.1:${localPort}`)return jsonReply(response,403,{error:'来源不匹配'}); void restoreBackup().then(()=>jsonReply(response,200,{finished:true})).catch(()=>jsonReply(response,500,{error:'无法恢复备份'})); }
+    else if (url.pathname.startsWith('/api/sync/')) void handleDeviceSync(request,response,url);
+    else if (url.pathname === '/api/notebook') void serializeNotebook(()=>handleApi(request, response));
     else if (url.pathname === '/api/drafts') handleDrafts(request, response);
+    else if (url.pathname.startsWith('/api/zotero/')) handleZotero(request, response, url.pathname);
     else if (url.pathname.startsWith('/api/cloud/')) handleCloud(request, response, url.pathname);
     else if (url.pathname === '/api/share') handleShare(request, response);
     else if (url.pathname === '/api/library/import') handleLibraryImport(request, response);
     else if (url.pathname === '/api/library/export-annotated') handleAnnotatedPdfExport(request, response);
-    else if (url.pathname === '/api/library/delete') handleLibraryDelete(request, response);
+    else if (url.pathname === '/api/library/delete') void serializeNotebook(()=>handleLibraryDelete(request, response));
     else if (url.pathname.startsWith('/api/library/file/')) handleLibraryFile(request, response, url.pathname);
     else handleStatic(request, response, url.pathname);
   });
@@ -541,8 +690,14 @@ async function exportBackup() {
     await dialog.showMessageBox(mainWindow, { type: 'error', title: '备份未完成', message: error.message || '请检查书籍文件和保存位置。', buttons: ['好'] });
   }
 }
+let restorePickerOpen=false;
 async function restoreBackup() {
-  const chosen = await dialog.showOpenDialog(mainWindow, { title: '选择问间备份', properties: ['openFile'], filters: [{ name: '问间备份', extensions: ['wenjian-backup', 'json'] }] });
+  if(restorePickerOpen||restoringBackup||cloudBusy)return;
+  restorePickerOpen=true;
+  try { await chooseBackup(); } finally { restorePickerOpen=false; }
+}
+async function chooseBackup() {
+  const chosen = await dialog.showOpenDialog(mainWindow, { title: '选择问间备份', properties: ['openFile'], filters: [{ name: '问间备份', extensions: ['*'] }] });
   if (chosen.canceled || !chosen.filePaths[0]) return;
   try {
     const source = chosen.filePaths[0];
@@ -561,6 +716,7 @@ async function restoreBackup() {
       if (!Number.isInteger(value.version) || !validNotebookData(value.data)) throw new Error('不是有效的问间备份。');
     }
     const missingBooks = complete ? 0 : (await Promise.all(value.data.libraryBooks.map(async (book) => {
+      if (book?.format === 'reference' && book.storedFile === '') return false;
       if (typeof book?.storedFile !== 'string' || path.basename(book.storedFile) !== book.storedFile) return true;
       return !(await fsp.access(path.join(libraryDir, book.storedFile)).then(() => true, () => false));
     }))).filter(Boolean).length;
@@ -570,6 +726,12 @@ async function restoreBackup() {
     const confirmation = await dialog.showMessageBox(mainWindow, { type: 'warning', title: '恢复备份', message: '恢复后，当前笔记会被这份备份替换。', detail, buttons: ['取消', '恢复'], defaultId: 0, cancelId: 0 });
     if (confirmation.response !== 1) return;
     restoringBackup = true;
+    await notebookQueue;
+    if (zoteroCatalogJob) await zoteroCatalogJob.catch(() => {});
+    await draftQueue;
+    const backupDir=path.join(app.getPath('userData'),'restore-safeguards');
+    await fsp.mkdir(backupDir,{recursive:true});
+    await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination:path.join(backupDir,`恢复前-${Date.now()}-${crypto.randomUUID()}.wenjian-backup`),validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data)});
     if (complete) {
       await draftQueue;
       await restoreCompleteBackup({ archivePath: source, notebookPath: dataPath, libraryDir, draftsPath, validateNotebook: (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data), writeNotebook: (candidate) => writeStore(candidate), writeDrafts });

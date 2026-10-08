@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorPrimary">#738073</item>
+        <item name="colorPrimaryDark">#f5f2eb</item>
+        <item name="colorAccent">#738073</item>
+    </style>
+    <style name="AppTheme.NoActionBarBase" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">#f5f2eb</item>
+        <item name="android:statusBarColor">#f5f2eb</item>
+        <item name="android:navigationBarColor">#343d38</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="AppTheme.NoActionBar" parent="AppTheme.NoActionBarBase" />
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#f5f2eb</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/wenjian_icon</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+    </style>
+</resources>

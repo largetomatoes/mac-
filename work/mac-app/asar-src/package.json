@@ -1,6 +1,6 @@
 {
   "name": "wenjian",
-  "version": "1.12.0",
+  "version": "2.1.0",
   "description": "问间本地 Mac 应用",
   "main": "main.js",
   "dependencies": {

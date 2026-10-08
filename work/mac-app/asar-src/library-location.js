@@ -38,6 +38,7 @@ async function prepareLocalLibrary({ storageDir, userDataDir, books, storageMode
   const names = [];
   const seen = new Set();
   for (const book of books) {
+    if (book?.format === 'reference' && book.storedFile === '') continue;
     const name = book?.storedFile;
     if (!safeStoredFile(name)) throw new Error(`书籍文件名不正确：${String(name)}`);
     if (!seen.has(name)) { seen.add(name); names.push(name); }

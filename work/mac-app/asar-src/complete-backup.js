@@ -13,6 +13,10 @@ function safeStoredFile(name) {
   return typeof name === 'string' && name.length > 0 && name === path.basename(name) && !name.startsWith('.') && !name.includes('\\') && /\.(pdf|epub)$/i.test(name);
 }
 
+function referenceWithoutFile(book) {
+  return book?.format === 'reference' && book.storedFile === '';
+}
+
 async function hashFile(filePath) {
   const hash = crypto.createHash('sha256');
   let size = 0;
@@ -55,8 +59,8 @@ async function exportCompleteBackup({ notebookPath, libraryDir, draftsPath, dest
   if (notebookBytes.length > MAX_NOTEBOOK_SIZE) throw new Error('笔记文件过大，无法生成备份。');
   const notebook = JSON.parse(notebookBytes.toString('utf8'));
   if (!validateNotebook(notebook)) throw new Error('当前笔记数据格式不正确，备份已取消。');
-  if (notebook.data.libraryBooks.some((book) => !book || !safeStoredFile(book.storedFile))) throw new Error('有书籍文件名不正确，备份已取消。');
-  const names = [...new Set(notebook.data.libraryBooks.map((book) => book.storedFile))];
+  if (notebook.data.libraryBooks.some((book) => !book || (!referenceWithoutFile(book) && !safeStoredFile(book.storedFile)))) throw new Error('有书籍文件名不正确，备份已取消。');
+  const names = [...new Set(notebook.data.libraryBooks.filter((book) => !referenceWithoutFile(book)).map((book) => book.storedFile))];
   const books = [];
   for (const storedFile of names) {
     const source = path.join(libraryDir, storedFile);
@@ -178,8 +182,8 @@ async function inspectCompleteBackup(archivePath, validateNotebook) {
     if (crypto.createHash('sha256').update(notebookBytes).digest('hex') !== manifest.notebook.sha256) throw new Error('备份中的笔记校验失败。');
     notebook = JSON.parse(notebookBytes.toString('utf8'));
     if (!validateNotebook(notebook)) throw new Error('备份中的笔记数据格式不正确。');
-    if (notebook.data.libraryBooks.some((book) => !book || !safeStoredFile(book.storedFile))) throw new Error('备份中的书籍记录不正确。');
-    const referenced = new Set(notebook.data.libraryBooks.map((book) => book.storedFile));
+    if (notebook.data.libraryBooks.some((book) => !book || (!referenceWithoutFile(book) && !safeStoredFile(book.storedFile)))) throw new Error('备份中的书籍记录不正确。');
+    const referenced = new Set(notebook.data.libraryBooks.filter((book) => !referenceWithoutFile(book)).map((book) => book.storedFile));
     if (referenced.size !== names.size || [...referenced].some((name) => !names.has(name))) throw new Error('备份中的书籍与笔记不匹配。');
     offset = notebookEnd;
     if (manifest.drafts) {
@@ -249,7 +253,7 @@ async function restoreCompleteBackup({ archivePath, notebookPath, libraryDir, dr
       ...backup.notebook,
       data: {
         ...backup.notebook.data,
-        libraryBooks: backup.notebook.data.libraryBooks.map((book) => ({ ...book, storedFile: replacements.get(book.storedFile) }))
+        libraryBooks: backup.notebook.data.libraryBooks.map((book) => referenceWithoutFile(book) ? book : ({ ...book, storedFile: replacements.get(book.storedFile) }))
       }
     };
     if (!validateNotebook(restored)) throw new Error('恢复后的笔记数据格式不正确。');

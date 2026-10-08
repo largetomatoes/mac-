@@ -1,3 +1,4 @@
+import settings from '../lib/notebook-settings.cjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -9,9 +10,10 @@ function load(file, imports){
  vm.runInNewContext(code,{module:loadedModule,exports:loadedModule.exports,require:name=>{if(!(name in imports))throw Error(name);return imports[name];},Response,console});
  return loadedModule.exports;
 }
-const notebook=load('lib/notebook.ts',{});
+const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts',{})});
+const fixture=modelFixture();function modelFixture(){const data=structuredClone(notebook.initialNotebook);data.setupCompleted=true;data.zoteroEnabled=true;data.notes.push({...structuredClone(data.notes[0]),id:'language',parent:'world',title:'测试子问题'});return data;}
 const deletion=load('lib/deletion.ts',{'./notebook':notebook});
-let state={version:0,content:JSON.stringify(notebook.initialNotebook)};
+let state={version:0,content:JSON.stringify(fixture)};
 const DB={prepare(sql){
  return {bind(...args){
   return {
@@ -26,10 +28,10 @@ const DB={prepare(sql){
   };
  }};
 }};
-const api=load('app/api/notebook/route.ts',{'@/lib/deletion':deletion,'@/lib/notebook':notebook,'cloudflare:workers':{env:{DB}},zod:{z}});
+const api=load('app/api/notebook/route.ts',{'@/lib/notebook-settings.cjs':settings,'@/lib/deletion':deletion,'@/lib/notebook':notebook,'cloudflare:workers':{env:{DB}},zod:{z}});
 const read=()=>JSON.parse(state.content);
 async function put(data,expected=200,version=state.version){const r=await api.PUT(new Request('http://test/api/notebook',{method:'PUT',body:JSON.stringify({data,version})}));assert.equal(r.status,expected,await r.text());}
-const legacy=structuredClone(notebook.initialNotebook);
+const legacy=structuredClone(fixture);
 legacy.crossThoughts=[
  {id:'legacy-a',order:1,title:'',anchorIds:['world','language'],text:'旧关联一',origin:'自己的思考',source:'',at:'',thoughts:[]},
  {id:'legacy-b',order:1,title:'旧关联二',anchorIds:['world','language'],text:'',origin:'自己的思考',source:'',at:'',thoughts:[]}
@@ -41,20 +43,20 @@ assert.equal(repaired.crossThoughts[0].title,undefined);
 repaired.notes[1].thoughts.push({id:'legacy-thought',text:'旧数据修复后仍能新增思考',origin:'自己的思考',reason:'',at:'today'});
 await put(repaired);
 assert.equal(read().notes[1].thoughts.length,1);
-const rich=structuredClone(notebook.initialNotebook);
+const rich=structuredClone(fixture);
 rich.libraryBooks.push({id:'book',title:'无作者 PDF',author:'',format:'pdf',storedFile:'book.pdf',originalName:'book.pdf',addedAt:'today',progress:{page:2,totalPages:10,rotation:90}});
 rich.libraryHighlights.push({id:'highlight',libraryBookId:'book',quote:'原文',locator:'第 2 页',sourceLocation:'pdf:2',at:'today'});
 rich.ocrCache.push({libraryBookId:'book',page:2,text:'识别文字',at:'today'});
 rich.readingNotes.push({id:'blank-source',questionIds:['language'],book:'无作者 PDF',author:'',chapter:'',locator:'第 2 页',quote:'原文',interpretation:'理解',at:'today',thoughts:[],libraryBookId:'book',sourceLocation:'pdf:2'});
 rich.manuscripts.push({id:'draft',title:'文稿',body:'引用这段文字。',links:[{id:'draft-link',questionId:'blank-source',targetKind:'reading',quote:'这段文字',start:2,end:6,prefix:'引用',suffix:'。',at:'today'}],at:'today',updatedAt:'today',revisions:[]});
-state={version:0,content:JSON.stringify(notebook.initialNotebook)};
+state={version:0,content:JSON.stringify(fixture)};
 await put(rich);
 assert.equal(read().readingNotes[0].chapter,'');
 assert.equal(read().manuscripts[0].links[0].targetKind,'reading');
 assert.equal(read().libraryBooks[0].progress.rotation,90);
 assert.equal(read().libraryHighlights[0].quote,'原文');
 assert.equal(read().ocrCache[0].text,'识别文字');
-state={version:0,content:JSON.stringify(notebook.initialNotebook)};
+state={version:0,content:JSON.stringify(fixture)};
 const first=read();
 first.notes.push({...first.notes[1],id:'child',parent:'language',order:1,title:'子板块'});
 first.notes.push({...first.notes[1],id:'cross-child',parent:'cross',order:1,title:'交叉产生的子问题'});

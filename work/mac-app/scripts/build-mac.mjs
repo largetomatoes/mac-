@@ -3,6 +3,8 @@ import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packager } from '@electron/packager';
+import * as asar from '@electron/asar';
+import crypto from 'node:crypto';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const projectRoot = path.resolve(appRoot, '../..');
@@ -37,7 +39,7 @@ async function prepare() {
     await requireFile(path.join(spaDist, name));
   }
   for (const name of ['seed.json', 'AppIcon.icns', 'native-Info.plist']) await requireFile(path.join(appRoot, name));
-  for (const name of ['main.js', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'package.json']) {
+  for (const name of ['main.js', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'library-import.js', 'zotero-local.js', 'package.json']) {
     await requireFile(path.join(appRoot, 'asar-src', name));
   }
 
@@ -46,6 +48,8 @@ async function prepare() {
   await mkdir(stage, { recursive: true });
   await mkdir(resourceStage, { recursive: true });
   await cp(path.join(appRoot, 'asar-src'), stage, { recursive: true });
+  await cp(path.join(projectRoot, 'lib/notebook-settings.cjs'), path.join(stage, 'notebook-settings.cjs'));
+  await cp(path.join(projectRoot, 'lib/ocr-cache.cjs'), path.join(stage, 'ocr-cache.cjs')); 
   await cp(spaDist, path.join(resourceStage, 'static'), { recursive: true });
   const dependencies = ['pdf-lib', 'pako', 'tslib', '@pdf-lib/standard-fonts', '@pdf-lib/upng'];
   for (const dependency of dependencies) {
@@ -73,6 +77,31 @@ if (prepareOnly) {
 } else {
   if (process.platform !== 'darwin') throw new Error('Mac 应用打包需要在 macOS 上运行。');
   const electronManifest = JSON.parse(await readFile(path.join(appRoot, 'node_modules', 'electron', 'package.json'), 'utf8'));
+  const runtimeApp = process.env.WENJIAN_MAC_RUNTIME_APP;
+  let application;
+  if (runtimeApp) {
+    // Reuse only the verified Electron runtime from a previous local release.
+    // Application resources and user data always come from the clean stage.
+    execFileSync('codesign', ['--verify', '--deep', '--strict', runtimeApp]);
+    const source = path.join(runtimeApp, 'Contents');
+    const runtimeVersion = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion', path.join(source, 'Frameworks/Electron Framework.framework/Resources/Info.plist')], {encoding:'utf8'}).trim();
+    if (runtimeVersion !== electronManifest.version) throw new Error('Electron runtime version mismatch');
+    application = path.join(releaseRoot, 'mac', `问间-${version}-darwin-arm64`, '问间.app');
+    if (path.resolve(runtimeApp) === path.resolve(application)) throw new Error('Runtime source must differ from output');
+    await rm(application, {recursive:true, force:true});
+    const contents = path.join(application, 'Contents'), resources = path.join(contents, 'Resources');
+    await mkdir(resources, {recursive:true});
+    for (const name of ['Frameworks', 'MacOS', 'PkgInfo']) await cp(path.join(source, name), path.join(contents, name), {recursive:true, verbatimSymlinks:true});
+    const plist = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(source, 'Info.plist')], {encoding:'utf8'}));
+    Object.assign(plist, {CFBundleShortVersionString:version, CFBundleVersion:buildVersion, CFBundleIdentifier:appBundleId, CFBundleIconFile:'AppIcon.icns'});
+    await asar.createPackage(stage, path.join(resources, 'app.asar'));
+    const header = asar.getRawHeader(path.join(resources, 'app.asar'));
+    plist.ElectronAsarIntegrity = {'Resources/app.asar':{algorithm:'SHA256', hash:crypto.createHash('sha256').update(header.headerString).digest('hex')}};
+    await writeFile(path.join(contents, 'Info.plist'), JSON.stringify(plist));
+    execFileSync('/usr/bin/plutil', ['-convert', 'xml1', path.join(contents, 'Info.plist')]);
+    await cp(path.join(resourceStage, 'static'), path.join(resources, 'static'), {recursive:true});
+    for (const name of ['seed.json', 'AppIcon.icns']) await cp(path.join(appRoot, name), path.join(resources, name));
+  } else {
   const paths = await packager({
     dir: stage,
     out: path.join(releaseRoot, 'mac'),
@@ -80,6 +109,7 @@ if (prepareOnly) {
     platform: 'darwin',
     arch: 'arm64',
     electronVersion: electronManifest.version,
+    electronZipDir: process.env.WENJIAN_ELECTRON_ZIP_DIR || undefined,
     appVersion: version,
     buildVersion,
     appBundleId,
@@ -90,7 +120,8 @@ if (prepareOnly) {
     extraResource: [path.join(resourceStage, 'static'), path.join(appRoot, 'seed.json')],
   });
   if (paths.length !== 1) throw new Error('Mac 打包没有生成唯一的应用目录。');
-  const application = path.join(paths[0], '问间.app');
+  application = path.join(paths[0], '问间.app');
+  }
   for (const name of ['Contents/Info.plist', 'Contents/Resources/app.asar', 'Contents/Resources/static/index.html', 'Contents/Resources/seed.json']) {
     await requireFile(path.join(application, name));
   }

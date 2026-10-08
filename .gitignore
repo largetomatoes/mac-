@@ -76,3 +76,20 @@ next-env.d.ts
 !/work/mac-app/scripts/build-mac.mjs
 
 *.tsbuildinfo
+
+!/work/mac-app/asar-src/zotero-local.js
+
+!/work/mac-app/asar-src/library-import.js
+
+/mobile/dist/
+/mobile/public/
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
+*.keystore
+*.jks
+!/work/mac-app/asar-src/nutstore-sync.cjs
+!/work/mac-app/asar-src/local-sync-migration.cjs

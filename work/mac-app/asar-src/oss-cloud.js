@@ -123,7 +123,7 @@ async function retryTransient(operation) {
   }
 }
 
-async function defaultTransport({ method, hostname, requestPath, headers, body, downloadPath, expectedSize, onProgress, signal, timeoutMs }) {
+async function defaultTransport({ method, hostname, requestPath, headers, body, uploadPath, downloadPath, expectedSize, onProgress, signal, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const request = https.request({ hostname, port: 443, method, path: requestPath, headers, signal, timeout: timeoutMs }, async (response) => {
       const statusCode = response.statusCode || 0;
@@ -162,7 +162,7 @@ async function defaultTransport({ method, hostname, requestPath, headers, body, 
       request.destroy(error);
     });
     request.on('error', reject);
-    request.end(body);
+    if (uploadPath) { const source=fs.createReadStream(uploadPath); source.on("error",error=>request.destroy(error)); source.pipe(request); request.on("close",()=>source.destroy()); } else request.end(body);
   });
 }
 
@@ -237,7 +237,7 @@ function createOssArchiveClient(rawConfig, options = {}) {
     throw new Error('OSS 信息请求时限不正确。');
   }
 
-  async function send(method, key = '', query = {}, { headers = {}, body, downloadPath, expectedSize, onProgress } = {}) {
+  async function send(method, key = '', query = {}, { headers = {}, body, uploadPath, downloadPath, expectedSize, onProgress } = {}) {
     const timestamp = clock().toISOString().replace(/[-:]|\.\d{3}/g, '');
     const signedHeaders = {
       'x-oss-content-sha256': 'UNSIGNED-PAYLOAD',
@@ -266,7 +266,7 @@ function createOssArchiveClient(rawConfig, options = {}) {
     }) : null;
     let result;
     try {
-      const request = transport({ method, hostname, requestPath, headers: signedHeaders, body, downloadPath,
+      const request = transport({ method, hostname, requestPath, headers: signedHeaders, body, uploadPath, downloadPath,
         expectedSize, onProgress, timeoutMs, signal: controller?.signal });
       result = deadline ? await Promise.race([request, deadline]) : await request;
     } catch (cause) {
@@ -432,7 +432,43 @@ function createOssArchiveClient(rawConfig, options = {}) {
     }
   }
 
-  return { uploadSnapshot, listSnapshots, downloadSnapshot };
+
+  const syncPrefix = config.prefix + 'sync-v1/';
+  function syncKey(key) {
+    if (typeof key !== 'string' || !/^(changes\/[a-f0-9]{64}\.json|books\/[a-f0-9]{64}\.(pdf|epub))$/.test(key)) throw new Error('同步对象名称不正确。');
+    return syncPrefix + key;
+  }
+  async function syncRemote({action,key,text}={}) {
+    if(action==='list'){
+      const keys=[];let token;
+      do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+'changes/','max-keys':1000,...(token?{'continuation-token':token}:{})});
+        const xml=result.body.toString('utf8');for(const block of xmlBlocks(xml,'Contents')) {const k=xmlTag(block,'Key');if(k?.startsWith(syncPrefix)){const relative=k.slice(syncPrefix.length);syncKey(relative);keys.push(relative);}}
+        const next=xmlTag(xml,'NextContinuationToken');if(xmlTag(xml,'IsTruncated')==='true'&&(!next||next===token))throw new Error('同步目录分页失败。');token=xmlTag(xml,'IsTruncated')==='true'?next:null;
+      }while(token);return {keys};
+    }
+    const object=syncKey(key);if(!key.startsWith('changes/'))throw new Error('书籍应通过文件传输接口访问。');
+    if(action==='get'){const r=await send('GET',object);return {text:r.body.toString('utf8')};}
+    if(action==='put') {if(typeof text!=='string'||Buffer.byteLength(text)>16*1024*1024)throw new Error('同步批次过大。');
+      if(crypto.createHash('sha256').update(text).digest('hex')!==key.slice(8,-5))throw new Error('同步校验值不匹配。');
+      try{await send('PUT',object,{}, {headers:{'content-type':'application/json','x-oss-forbid-overwrite':'true'},body:Buffer.from(text)});}catch(error){if(error.status!==409)throw error;const existing=await send('GET',object);if(!existing.body.equals(Buffer.from(text)))throw new Error('已有同步文件校验失败。');}return {ok:true};
+    }throw new Error('不支持的同步操作。');
+  }
+  async function uploadBook(filePath,format) {
+    if(!['pdf','epub'].includes(format))throw new Error('只支持 PDF 和 EPUB。');
+    const handle=await fsp.open(filePath,'r');let size,sha256;try{const stat=await handle.stat();size=stat.size;if(!stat.isFile()||size<1||size>5*1024**3)throw new Error('书籍大小不支持。');sha256=await hashHandle(handle,size);}finally{await handle.close();}
+    const key='books/'+sha256+'.'+format;
+    const verifyHead=async()=>{const result=await send('HEAD',syncKey(key));if(Number(result.headers?.['content-length'])!==size||result.headers?.['x-oss-meta-wenjian-sha256']!==sha256)throw new Error('云端书籍校验信息不一致。');};
+    try{await verifyHead();return {key,sha256,size};}catch(error){if(error.status!==404)throw error;}
+    try{await send('PUT',syncKey(key),{}, {headers:{'content-length':String(size),'content-type':'application/octet-stream','x-oss-forbid-overwrite':'true','x-oss-meta-wenjian-sha256':sha256},uploadPath:filePath});}catch(error){if(error.status!==409)throw error;await verifyHead();}
+    return {key,sha256,size};
+  }
+  async function downloadBook(file,destination) {
+    if(!file||!SHA256.test(file.sha256||'')||file.key!=='books/'+file.sha256+path.extname(file.key)||!Number.isSafeInteger(file.size)||file.size<1||file.size>5*1024**3)throw new Error('云端书籍清单无效。');
+    const temporary=destination+'.download-'+crypto.randomUUID();
+    try {const result=await send('GET',syncKey(file.key),{}, {downloadPath:temporary,expectedSize:file.size});if(result.download?.size!==file.size||result.download?.sha256!==file.sha256)throw new Error('书籍下载校验失败。');await fsp.rename(temporary,destination);}finally{await fsp.unlink(temporary).catch(()=>{});}return {ok:true};
+  }
+  return { uploadSnapshot, listSnapshots, downloadSnapshot, syncRemote, uploadBook, downloadBook };
+
 }
 
-module.exports = { validateOssConfig, createOssArchiveClient, signV4 };
+module.exports = { validateOssConfig, createOssArchiveClient, signV4, defaultTransport };

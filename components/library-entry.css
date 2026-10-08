@@ -1,0 +1,6 @@
+.library-entry-menu[data-slot=popover-content]{width:220px;max-width:calc(100vw - 32px);padding:7px;border:1px solid #dce2dc;border-radius:12px;background:#fcfcf8;box-shadow:0 12px 34px #283e401c;display:grid;gap:3px;z-index:70}
+.library-entry-menu>button{display:flex;align-items:center;gap:14px;min-height:52px;padding:12px 15px;border:0;border-radius:7px;background:transparent;text-align:left;font-size:15px;color:#405b64;transition:background .15s,color .15s}
+.library-entry-menu>button:hover,.library-entry-menu>button:focus-visible{background:#eaf0ec;color:#294c58}
+.library-entry-menu>button:focus-visible{outline:2px solid #9db4bf;outline-offset:-2px}
+.library-entry-menu>button>svg{height:21px;width:21px;stroke-width:1.5;flex:none}
+.library-entry-zotero{display:grid;place-items:center;width:21px;height:23px;color:#917257;font:500 23px/1 Georgia,serif}

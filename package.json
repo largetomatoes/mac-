@@ -11,10 +11,16 @@
     "build": "node scripts/run-framework.mjs build",
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "build:mobile": "vite build --config mobile/vite.config.mjs",
+    "android:sync": "cap sync android",
+    "test:sync": "node tests/test-device-sync.mjs && node tests/test-sync-client.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
     "@tesseract.js-data/chi_sim": "^1.0.0",
@@ -45,6 +51,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
     "@tailwindcss/postcss": "4.2.1",

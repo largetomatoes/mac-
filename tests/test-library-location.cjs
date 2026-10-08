@@ -82,3 +82,30 @@ test('rejects unsafe book filenames before writing any local files', async (t) =
   await assert.rejects(prepareLocalLibrary({ ...options, books: [{ storedFile: '../escape.pdf' }] }), /文件名不正确/);
   await assert.rejects(fsp.access(path.join(options.userDataDir, 'library')), /ENOENT/);
 });
+
+test('migrates actual files in a mixed bibliography and retains reference metadata unchanged', async (t) => {
+  const options = await fixture(t);
+  const reference = { id: 'reference', format: 'reference', storedFile: '', zotero: { itemKey: 'ITEM0001', annotations: [{ text: '原文', comment: '源批注' }] } };
+  options.books.push(reference);
+  const before = JSON.stringify(options.books);
+  await fsp.writeFile(path.join(options.storageDir, 'library', 'a.pdf'), 'PDF bytes');
+  await fsp.writeFile(path.join(options.storageDir, 'library', 'b.epub'), 'EPUB bytes');
+  const localLibraryDir = await prepareLocalLibrary(options);
+  assert.deepEqual((await fsp.readdir(localLibraryDir)).sort(), ['a.pdf', 'b.epub']);
+  assert.equal(JSON.stringify(options.books), before);
+});
+
+test('a bibliography-only library needs no legacy originals directory', async (t) => {
+  const options = await fixture(t);
+  await fsp.rm(path.join(options.storageDir, 'library'), { recursive: true });
+  const localLibraryDir = await prepareLocalLibrary({ ...options, books: [{ format: 'reference', storedFile: '' }] });
+  assert.deepEqual(await fsp.readdir(localLibraryDir), []);
+});
+
+test('empty PDF/EPUB names and malformed reference names are not skipped', async (t) => {
+  const options = await fixture(t);
+  for (const book of [{ format: 'pdf', storedFile: '' }, { format: 'epub', storedFile: '' }, { format: 'reference' }, { format: 'reference', storedFile: '../escape.pdf' }]) {
+    await assert.rejects(prepareLocalLibrary({ ...options, books: [book] }), /文件名不正确/);
+  }
+  await assert.rejects(prepareLocalLibrary({ ...options, books: [{ format: 'reference', storedFile: 'missing.pdf' }] }), /找不到书籍原文件/);
+});

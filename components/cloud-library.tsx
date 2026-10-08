@@ -9,7 +9,7 @@ import {Input} from '@/components/ui/input';
 type CloudConfig={configured:boolean;region:string;bucket:string;prefix:string;accessKeyId:string};
 type CloudSnapshot={key:string;createdAt:string;size:number};
 type CloudJob={state:'idle'|'running'|'done'|'error';stage?:string;progress?:number;message?:string;result?:{restored?:boolean;key?:string}};
-type Props={open:boolean;onOpenChange:(open:boolean)=>void;onRestored?:()=>void};
+type Props={open:boolean;bookCount?:number;startInSettings?:boolean;onOpenChange:(open:boolean)=>void;onRestored?:()=>void};
 type Form={region:string;bucket:string;prefix:string;accessKeyId:string;accessKeySecret:string};
 
 const emptyForm:Form={region:'',bucket:'',prefix:'wenjian/',accessKeyId:'',accessKeySecret:''};
@@ -25,7 +25,7 @@ async function api<T>(path:string,options?:RequestInit):Promise<T>{
 function dateLabel(value:string){const date=new Date(value);return Number.isNaN(date.getTime())?value:new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date);}
 function sizeLabel(value:number){if(!Number.isFinite(value)||value<0)return '大小未知';return value>=1024*1024*1024?`${(value/1024/1024/1024).toFixed(2)} GB`:value>=1024*1024?`${(value/1024/1024).toFixed(1)} MB`:`${Math.max(1,Math.round(value/1024))} KB`;}
 
-export function CloudLibrary({open,onOpenChange,onRestored}:Props){
+export function CloudLibrary({open,bookCount=0,startInSettings=false,onOpenChange,onRestored}:Props){
  const [config,setConfig]=useState<CloudConfig|null>(null);
  const [form,setForm]=useState<Form>(emptyForm);
  const [editing,setEditing]=useState(false);
@@ -53,7 +53,7 @@ export function CloudLibrary({open,onOpenChange,onRestored}:Props){
     if(!active)return;
     setConfig(loaded);
     setForm({region:loaded.region||'',bucket:loaded.bucket||'',prefix:loaded.prefix||'wenjian/',accessKeyId:loaded.accessKeyId||'',accessKeySecret:''});
-    setEditing(!loaded.configured);
+    setEditing(!loaded.configured||startInSettings);
     const status=await api<CloudJob>('/api/cloud/job');
     if(active)setJob(status);
     if(loaded.configured){
@@ -65,7 +65,7 @@ export function CloudLibrary({open,onOpenChange,onRestored}:Props){
    finally{if(active)setLoading(false);}
   })();
   return()=>{active=false;};
- },[open]);
+ },[open,startInSettings]);
 
  useEffect(()=>{
   if(job?.state!=='running')return;
@@ -142,7 +142,7 @@ export function CloudLibrary({open,onOpenChange,onRestored}:Props){
  const busy=working||job?.state==='running';
  const progress=typeof job?.progress==='number'?Math.max(0,Math.min(100,Math.round(job.progress))):null;
 
- return <Dialog open={open} onOpenChange={changeOpen}><DialogContent className="cloud-library-dialog"><DialogTitle>云备份</DialogTitle><DialogDescription>把笔记和书籍的完整备份存到阿里云 OSS；本机仍可离线使用。</DialogDescription>
+ return <Dialog open={open} onOpenChange={changeOpen}><DialogContent className="cloud-library-dialog"><DialogTitle>云备份</DialogTitle><DialogDescription>手动上传完整备份到阿里云 OSS，包含 {bookCount} 本原书、书籍分类、笔记、批注、阅读进度和草稿。本机仍可离线使用。</DialogDescription>
   <div className="cloud-library-scroll">
    {loading?<p className="cloud-library-muted">正在读取设置…</p>:<>
     {editing?<form className="cloud-library-settings" onSubmit={saveConfig}>

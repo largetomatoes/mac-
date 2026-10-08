@@ -1,0 +1,18 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm'),{createRequire}=require('node:module'),{Readable}=require('node:stream');
+test('desktop settings hide credentials, pin sync destination, CAS commits and preserve legacy folder',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wenjian-sync-api-'));try{
+ const local=path.join(dir,'local'),legacy=path.join(dir,'legacy');await fs.mkdir(local);await fs.mkdir(legacy);const seed=JSON.parse(await fs.readFile('work/mac-app/seed.json','utf8'));await fs.writeFile(path.join(legacy,'notebook.json'),JSON.stringify(seed));
+ const main=path.resolve('work/mac-app/asar-src/main.js'),originalRequire=createRequire(main),mock={app:{commandLine:{appendSwitch(){}},on(){},setName(){},getVersion:()=>'2.1.0',setAboutPanelOptions(){},requestSingleInstanceLock:()=>false,quit(){},getPath:()=>local},safeStorage:{isEncryptionAvailable:()=>true,encryptString:value=>Buffer.from('test-only:'+value),decryptString:value=>value.toString().slice(10)}};
+ const context=vm.createContext({require:name=>name==='electron'?mock:['./notebook-settings.cjs','./ocr-cache.cjs'].includes(name)?require(path.resolve('lib',name.slice(2))):originalRequire(name),process:{env:{}},Buffer,console,URL,setTimeout,clearTimeout,__dirname:path.dirname(main)});
+ vm.runInContext(await fs.readFile(main,'utf8')+'\nmoduleApi={handleDeviceSync,readStore};',context);vm.runInContext(`localPort=1234;dataPath=${JSON.stringify(path.join(legacy,'notebook.json'))};storageDir=${JSON.stringify(legacy)};storageMode='nutstore';libraryDir=${JSON.stringify(path.join(local,'library'))};`,context);
+ async function api(route,body,headers={}){let status,reply;const request=Readable.from(body===undefined?[]:[Buffer.from(JSON.stringify(body))]);request.headers={host:'127.0.0.1:1234',...headers};request.method=body===undefined?'GET':'POST';await context.moduleApi.handleDeviceSync(request,{writeHead:s=>{status=s;},end:value=>{reply=JSON.parse(value);}},new URL('http://127.0.0.1:1234/api/sync/'+route));return {status,reply};}
+ assert.equal((await api('identity',undefined,{origin:'https://foreign.invalid'})).status,403);
+ let result=await api('settings',{provider:'nutstore',username:'qa@example.invalid',password:'fake-app-password'});assert.equal(result.status,200);assert.equal(result.reply.provider,'nutstore');assert(!JSON.stringify(result.reply).includes('fake-app-password'));
+ const sync={schema:1,device:'test-device',enabled:true,target:result.reply.target,operations:[],pending:[],received:[],observed:{}};
+ result=await api('commit',{version:seed.version,syncRevision:0,data:seed.data,sync});assert.equal(result.status,200);assert.equal(result.reply.syncRevision,1);assert.equal(result.reply.storage,'local');
+ const cfg=JSON.parse(await fs.readFile(path.join(local,'sync-config.json'),'utf8'));assert.equal(cfg.provider,'local');assert.equal(JSON.parse(await fs.readFile(path.join(legacy,'notebook.json'),'utf8')).sync,undefined);
+ const current=await api('local');assert.equal(current.reply.sync.device,'test-device');assert.equal((await api('commit',{version:seed.version,syncRevision:0,data:seed.data,sync})).status,409);
+ result=await api('settings',{provider:'oss'});assert.match(result.reply.error,/另一个云端/);assert.equal((await api('identity')).reply.provider,'nutstore');
+ result=await api('settings',{provider:'nutstore',username:'qa@example.invalid',password:''});assert.equal(result.status,200);result=await api('settings',{provider:'nutstore',username:'another@example.invalid',password:''});assert.notEqual(result.status,200);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});

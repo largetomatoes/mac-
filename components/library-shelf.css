@@ -1,0 +1,77 @@
+.library-shelf.folder-library-shelf{min-height:0;overflow:hidden;background:#f1f2ef;color:#4d5959}
+.folder-library-shelf>header.folder-shelf-header{position:static;flex-shrink:0;padding:20px 14px 12px;background:transparent}
+.folder-shelf-header>div>svg{width:18px;height:18px;color:#788378}
+.folder-shelf-header>[data-slot=button]{color:#657367}
+.folder-shelf-header>div>[data-slot=button].folder-shelf-back{width:22px;height:26px;margin-left:-5px;color:#82907e}
+.folder-shelf-header .folder-shelf-back svg{width:14px;height:14px}
+.folder-shelf-zotero-mark{display:grid;place-items:center;width:18px;height:20px;color:#788378;font:600 17px/1 Georgia,serif}
+.folder-shelf-zotero{display:flex;align-items:center;flex-wrap:wrap;flex-shrink:0;gap:3px 6px;margin:0 13px 9px;color:#7b8876;font-size:10px;line-height:1.6}
+.folder-shelf-zotero>[role=status]{display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+.folder-zotero-indicator{width:5px;height:5px;border-radius:50%;background:#aaa99c;flex-shrink:0}
+.folder-shelf-zotero[data-state=connected] .folder-zotero-indicator{background:#839773}
+.folder-shelf-zotero[data-state=error] .folder-zotero-indicator{background:#b38562}
+.folder-shelf-zotero>[data-slot=button]{width:23px;height:23px;color:inherit}
+.folder-shelf-zotero>[data-slot=button] svg{width:12px;height:12px}
+.folder-shelf-zotero>p{flex-basis:100%;margin:0;padding:0 3px 2px 10px;overflow-wrap:anywhere;color:#8b8f81;font-size:10px}
+.folder-shelf-zotero-badge{display:block;width:15px;margin-top:5px;border-radius:3px;border:1px solid #c3ccbc;font:600 9px/14px system-ui;text-align:center;letter-spacing:0;color:#788b6d}
+.folder-shelf-search{position:relative;display:flex;align-items:center;flex-shrink:0;margin:0 12px 12px}
+.folder-shelf-search>svg{position:absolute;left:10px;width:14px;height:14px;pointer-events:none;color:#8b948a}
+.folder-shelf-search>[data-slot=input]{height:34px;padding-left:31px;padding-right:31px;font-size:12px;background:#ffffffad;border-color:#dce1d8;box-shadow:none}
+.folder-library-shelf>.folder-shelf-search>[data-slot=button]{position:absolute;right:3px;display:flex;grid-template-columns:none;width:26px;height:26px;padding:3px;border:0;color:#82907f}
+.folder-shelf-folders{display:flex;flex-direction:column;flex:0 1 auto;min-height:94px;max-height:40%;padding:0 10px 10px;border-bottom:1px solid #dce2d8}
+.folder-shelf-section-heading{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding:0 3px 3px 7px;font-size:11px;color:#8a9287}
+.folder-shelf-section-heading>small{font-size:10px;color:#99a18f}
+.folder-shelf-collections>.folder-shelf-section-heading{min-height:26px;padding-right:8px}
+.folder-shelf-folders nav{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.folder-shelf-collection-branch{min-width:0;margin:0;padding:0;list-style:none}
+.folder-shelf-collection-branch .folder-shelf-collection-branch{padding-left:12px}
+.folder-shelf-collection-row>.folder-shelf-folder{padding-left:2px;gap:6px}
+.folder-shelf-collection-toggle,.folder-shelf-collection-spacer{display:grid;place-items:center;width:18px;min-width:18px;height:29px;color:#899580}
+.folder-shelf-collection-toggle{border-radius:5px;cursor:pointer}
+.folder-shelf-collection-toggle:hover{background:#dce5d6;color:#526b4c}
+.folder-shelf-collection-toggle>svg{width:12px;height:12px}
+.folder-shelf-folder-row{position:relative;display:flex;align-items:center;min-width:0;min-height:34px;margin-top:2px;border-radius:6px}
+.folder-shelf-folder-row:has([aria-pressed=true]){background:#e3e9df}
+.folder-shelf-folder{display:flex;align-items:center;gap:8px;flex:1;min-width:0;width:100%;padding:8px 8px;border-radius:6px;color:#606e5e;text-align:left;font-size:12px;line-height:1.4;cursor:pointer}
+.folder-shelf-folder:hover{background:#e7ece3}
+.folder-shelf-folder[aria-pressed=true]{color:#344d38;font-weight:600}
+.folder-shelf-folder>svg{width:14px;height:14px;flex-shrink:0;opacity:.8}
+.folder-shelf-folder>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.folder-shelf-folder>small{color:#8a9685;font:11px/1.4 system-ui;flex-shrink:0}
+.folder-shelf-folder-actions{display:flex;flex-shrink:0;padding-right:2px}
+.folder-shelf-folder-actions>[data-slot=button]{width:23px;height:26px;color:#7c8877}
+.folder-shelf-folder-actions>[data-slot=button] svg{width:12px;height:12px}
+.folder-shelf-books{min-height:100px;flex:1;display:flex;flex-direction:column}
+.folder-shelf-book-heading{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-shrink:0;padding:12px 16px 8px;color:#7e897b;font-size:11px}
+.folder-shelf-book-heading>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.folder-shelf-book-heading>small{flex-shrink:0;font-size:10px;color:#939c90}
+.folder-shelf-book-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:0 7px 12px;scrollbar-width:thin}
+.folder-shelf-book{position:relative;display:flex;align-items:center;margin:2px 0;border:1px solid transparent;border-radius:7px}
+.folder-shelf-book:hover{background:#ffffff80}
+.folder-shelf-book.is-current{background:#fff;border-color:#dce3d7;box-shadow:0 1px 3px #37482f06}
+.folder-shelf-open-book{display:grid;grid-template-columns:31px minmax(0,1fr);gap:3px 7px;flex:1;min-width:0;padding:12px 2px 12px 9px;text-align:left;cursor:pointer}
+.folder-shelf-book-format{align-self:start;padding-top:3px;grid-row:1/3;font:9px/1.5 system-ui;letter-spacing:.03em;color:#8b9786}
+.folder-shelf-open-book>strong{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;font:600 13px/1.6 "Songti SC","STSong",serif;color:#3f4d43}
+.folder-shelf-open-book>small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#92998d}
+.folder-shelf-book>[data-slot=button].folder-shelf-move{width:25px;height:30px;flex-shrink:0;margin-right:3px;color:#87967e}
+.folder-shelf-book>.folder-shelf-move svg{width:13px;height:13px}
+.folder-shelf-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:28px 14px;color:#8b9788;text-align:center}
+.folder-shelf-empty>svg{width:25px;height:25px;stroke-width:1.2;opacity:.65}
+.folder-shelf-empty>p{margin:2px 0;font-size:12px;line-height:1.7}
+.folder-shelf-empty>small{font-size:11px;line-height:1.7;color:#99a091}
+.folder-shelf-empty>[data-slot=button]{font-size:11px;color:#596d54}
+.folder-shelf-footer{flex-shrink:0;padding:8px 12px;border-top:1px solid #dce2d8}
+.folder-shelf-footer>[data-slot=button]{width:100%;justify-content:space-between;font-size:11px;color:#7c8875}
+.folder-shelf-footer span{font-size:10px;color:#96a08e}
+.folder-shelf-dialog{width:min(440px,calc(100vw - 32px))!important;max-height:calc(100dvh - 40px);overflow:auto;background:#fafbf8}
+.folder-shelf-dialog [data-slot=dialog-title]{padding-right:20px;font-size:18px;color:#394d3f}
+.folder-shelf-dialog [data-slot=dialog-description]{overflow-wrap:anywhere;line-height:1.8;font-size:13px;color:#7c8875}
+.folder-shelf-dialog form{display:grid;gap:18px}
+.folder-shelf-dialog form>label{display:grid;gap:8px;font-size:12px;color:#63725d}
+.folder-shelf-dialog [data-slot=input],.folder-shelf-dialog [data-slot=native-select]{background:#fff;font-size:13px}
+.folder-shelf-dialog [data-slot=native-select-wrapper]{width:100%}
+.folder-shelf-dialog form>footer{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.folder-shelf-dialog form>footer>[data-slot=button]{font-size:12px}
+.folder-shelf-error{margin:0;padding:10px 12px;border-radius:6px;color:#a1513c;background:#f9eee9;font-size:12px;line-height:1.7}
+.folder-shelf-folder:focus-visible,.folder-shelf-open-book:focus-visible,.folder-shelf-collection-toggle:focus-visible{outline:2px solid #8ca080;outline-offset:-2px;border-radius:6px}
+@media(hover:hover){.folder-shelf-folder-actions{opacity:.55}.folder-shelf-folder-row:hover>.folder-shelf-folder-actions,.folder-shelf-folder-row:focus-within>.folder-shelf-folder-actions{opacity:1}.folder-shelf-move{opacity:.7}.folder-shelf-book:hover>.folder-shelf-move,.folder-shelf-book:focus-within>.folder-shelf-move{opacity:1}}
