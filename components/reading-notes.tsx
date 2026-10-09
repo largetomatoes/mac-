@@ -1,5 +1,6 @@
 "use client";
 
+import {bookThoughtLocation} from '@/lib/book-notebook';
 import {ReadingNoteLinks} from "@/components/reading-note-links";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronDown, CornerDownRight, Lightbulb, Plus } from "lucide-react";
@@ -114,7 +115,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
           <span>{reading.locator || "原文"}</span><p>{excerpt(reading.quote)}</p><footer>{reading.thoughts.length ? `${reading.thoughts.length} 条后续思考` : "查看理解"}</footer>
         </button>)}</div>
       </details>)}
-    </section>)}</div>{!!bookThoughts.length&&<section className="linked-book-thoughts"><h3><Lightbulb size={15}/>来自书籍的思考</h3>{bookThoughts.map(entry=><button type="button" key={entry.id} disabled={!entry.libraryBookId||!onOpenBook} onClick={()=>entry.libraryBookId&&onOpenBook?.(entry.libraryBookId,entry.sourceLocation)}><span>《{entry.bookTitle}》{entry.scope==='book'?' · 全书':` · ${[entry.chapter,entry.locator].filter(Boolean).join(' · ')||'阅读位置'}`}</span>{entry.quote&&<blockquote>{excerpt(entry.quote,120)}</blockquote>}<p>{entry.text}</p><small>{entry.thoughts.length?`${entry.thoughts.length} 条后续思考 · `:''}{when(entry.at)}</small></button>)}</section>}</>}
+    </section>)}</div>{!!bookThoughts.length&&<section className="linked-book-thoughts"><h3><Lightbulb size={15}/>来自书籍的思考</h3>{bookThoughts.map(entry=><button type="button" key={entry.id} disabled={!entry.libraryBookId||!onOpenBook} onClick={()=>entry.libraryBookId&&onOpenBook?.(entry.libraryBookId,entry.sourceLocation)}><span>《{entry.bookTitle}》{` · ${bookThoughtLocation(entry)}`}</span>{entry.quote&&<blockquote>{excerpt(entry.quote,120)}</blockquote>}<p>{entry.text}</p><small>{entry.thoughts.length?`${entry.thoughts.length} 条后续思考 · `:''}{when(entry.at)}</small></button>)}</section>}</>}
 
     <Dialog open={creating} onOpenChange={setCreating}><DialogContent className="reading-create-dialog"><DialogTitle>摘录原文</DialogTitle><DialogDescription>每段原文独立保存，同一本书的同一章节会自动集合。</DialogDescription><form onSubmit={createNote} className="reading-create-form">
       <div className="source-fields"><label>书名<Input list="reading-books" value={book} onChange={(e) => setBook(e.target.value)} required/><datalist id="reading-books">{books.map((value) => <option key={value} value={value}/>)}</datalist></label><label>作者（可选）<Input list="reading-authors" value={author} onChange={(e) => setAuthor(e.target.value)}/><datalist id="reading-authors">{authors.map((value) => <option key={value} value={value}/>)}</datalist></label></div>

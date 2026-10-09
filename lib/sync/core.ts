@@ -1,7 +1,7 @@
 import type {Notebook} from '../notebook';
 export type SyncValue = unknown;
 export type Operation = {id:string;key:string;parents:string[];value:SyncValue;at:string;device:string};
-export type SyncState = {schema:1;device:string;enabled:boolean;target:string;operations:Operation[];pending:Operation[];received:string[];observed:Record<string,SyncValue>;lastSync?:string};
+export type SyncState = {schema:1;device:string;enabled:boolean;target:string;operations:Operation[];pending:Operation[];received:string[];observed:Record<string,SyncValue>;lastSync?:string;published?:string[];books?:{errors:Record<string,string>;lastChecked?:string}};
 export type Conflict = {key:string;options:Operation[]};
 const collections=['notes','links','cards','readingNotes','crossThoughts','thoughtReplies','manuscripts','libraryBooks','libraryFolders','zoteroCollections','libraryHighlights','bookThoughts','ocrCache'] as const;
 const scalars=['setupCompleted','zoteroEnabled','dismissedSuggestions'] as const;

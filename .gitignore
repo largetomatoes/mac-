@@ -93,3 +93,5 @@ next-env.d.ts
 *.jks
 !/work/mac-app/asar-src/nutstore-sync.cjs
 !/work/mac-app/asar-src/local-sync-migration.cjs
+
+!/work/mac-app/asar-src/app-updates.cjs

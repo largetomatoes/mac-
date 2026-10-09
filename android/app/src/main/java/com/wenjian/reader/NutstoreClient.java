@@ -39,7 +39,7 @@ final class NutstoreClient {
         for(int i=0;i<headers.length;i+=2)request.header(headers[i],headers[i+1]);return http.newCall(request.build()).execute();
     }
     private static void success(Response response)throws IOException {
-        if(response.isSuccessful())return;int code=response.code();throw new IOException(code==401||code==403?"坚果云验证失败，请检查邮箱和应用密码":code==429?"坚果云请求过于频繁，请稍后重试":code==507?"坚果云空间或流量不足":"坚果云请求失败（"+code+"）");
+        if(response.isSuccessful())return;int code=response.code();throw new IOException(code==401?"坚果云身份验证失败（401），请检查账号邮箱和第三方应用密码":code==403?"坚果云拒绝访问（403），请检查应用授权或目录权限；这不一定是密码错误":code==429?"坚果云请求过于频繁，请稍后重试":code==507?"坚果云空间或流量不足":"坚果云请求失败（"+code+"）");
     }
     private static byte[] read(InputStream stream,long max)throws Exception {
         try(InputStream in=stream;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[65536];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>max)throw new IOException("同步响应过大");out.write(buffer,0,n);}return out.toByteArray();}
@@ -65,7 +65,7 @@ final class NutstoreClient {
             if(!Pattern.compile("<(?:[\\w-]+:)?status[^>]*>HTTP/\\d(?:\\.\\d)? 2\\d\\d").matcher(blocks.group(1)).find())throw new IOException("坚果云文件状态读取失败");
             if(path.replaceAll("/$","").equals(folder.replaceAll("/$","")))continue;
             if(!path.startsWith(folder)||path.substring(folder.length()).replaceAll("/$","").contains("/"))throw new IOException("坚果云返回目录外文件");
-result.add(path.substring(folder.length()));
+String child=path.substring(folder.length());if(Pattern.compile("<(?:[\\w-]+:)?collection(?:\\s[^>]*)?/?[>]").matcher(blocks.group(1)).find()&&!child.endsWith("/"))child+="/";result.add(child);
         }if(count==0)throw new IOException("坚果云目录响应为空，未合并");return result;
     }
     private List<String> listing(String folder)throws Exception {
@@ -73,7 +73,14 @@ result.add(path.substring(folder.length()));
         try(Response response=request("PROPFIND",folder,RequestBody.create(xml,MediaType.get("application/xml")),"Depth","1")){if(response.code()==404)return Collections.emptyList();success(response);return children(new String(read(response.body().byteStream(),16L*1024*1024),StandardCharsets.UTF_8),folder);}
     }
     JSONObject remote(JSONObject input)throws Exception {
-        String action=input.optString("action");if("list".equals(action)){JSONArray keys=new JSONArray();for(String dir:listing(ROOT+"changes/")){if(!dir.matches("[a-f0-9]/"))throw new IOException("同步目录含未知文件，未合并");for(String name:listing(ROOT+"changes/"+dir)){if(!name.matches(dir.charAt(0)+"[a-f0-9]{63}\\.json"))throw new IOException("同步文件名不正确");keys.put("changes/"+name);}}return new JSONObject().put("keys",keys);}
+        String action=input.optString("action");
+        if("check".equals(action)){
+            ensure(null);byte[] probe="{\"schema\":1,\"purpose\":\"wenjian-connection-check\"}".getBytes(StandardCharsets.UTF_8);String path=ROOT+"connection-check.json";
+            try(Response put=request("PUT",path,RequestBody.create(probe,MediaType.get("application/json")),"If-None-Match","*")){if(put.code()!=412)success(put);}
+            try(Response get=request("GET",path,null)){success(get);if(!Arrays.equals(probe,read(get.body().byteStream(),65536)))throw new IOException("连接检查文件不一致");}
+            return remote(new JSONObject().put("action","list")).put("ok",true);
+        }
+        if("list".equals(action)){JSONArray keys=new JSONArray();for(String dir:listing(ROOT+"changes/")){if(!dir.matches("[a-f0-9]/"))throw new IOException("同步目录含未知文件，未合并");for(String name:listing(ROOT+"changes/"+dir)){if(!name.matches(dir.charAt(0)+"[a-f0-9]{63}\\.json"))throw new IOException("同步文件名不正确");keys.put("changes/"+name);}}return new JSONObject().put("keys",keys);}
         String key=input.getString("key"),path=object(key);if(!key.startsWith("changes/"))throw new IOException("请使用书籍接口");
         if("get".equals(action)){try(Response response=request("GET",path,null)){success(response);return new JSONObject().put("text",new String(read(response.body().byteStream(),16L*1024*1024),StandardCharsets.UTF_8));}}
         byte[] body=input.optString("text").getBytes(StandardCharsets.UTF_8);if(!"put".equals(action)||body.length>16*1024*1024||!key.equals("changes/"+hex(MessageDigest.getInstance("SHA-256").digest(body))+".json"))throw new IOException("同步文件校验不正确");

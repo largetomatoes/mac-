@@ -1,3 +1,5 @@
+import {App} from '@capacitor/app';
+import {PREVIEW_VERSION,validReleaseUrl} from '../lib/app-updates';
 import {Capacitor,registerPlugin} from '@capacitor/core';
 import {initialNotebook,normalize,type Notebook,type LibraryBook} from '../lib/notebook';
 import {validOcrEntry,mergeOcrPage} from '../lib/ocr-cache.cjs';
@@ -6,7 +8,7 @@ import type {Envelope} from '../lib/sync/client';
 import {newSyncState} from '../lib/sync/core';
 type CloudFile={key:string;sha256:string;size:number};
 type Config={configured:boolean;region?:string;bucket?:string;prefix?:string;accessKeyId?:string};
-interface NativeStorage{getSyncIdentity():Promise<{provider:string;configured:boolean;target:string}>;setSyncConnection(input:{config:unknown}):Promise<unknown>;readStore():Promise<{text?:string}>;writeStore(input:{text:string}):Promise<{ok:boolean}>;bookInfo(input:{name:string}):Promise<{available:boolean;uri:string}>;importBook():Promise<{cancelled?:boolean;name:string;storedFile:string;format:'pdf'|'epub'}>;getConfig():Promise<Config>;setConfig(input:{config:unknown}):Promise<Config>;remote(input:unknown):Promise<unknown>;transferBook(input:{name:string;action:string;file?:CloudFile;target?:string}):Promise<CloudFile>}
+interface NativeStorage{appReleases():Promise<{releases:unknown[]}>;openRelease(input:{url:string}):Promise<{ok:boolean}>;connectSync(input:{config:unknown}):Promise<unknown>;detachSync(input:{target:string}):Promise<unknown>;getSyncIdentity():Promise<{provider:string;configured:boolean;target:string}>;setSyncConnection(input:{config:unknown}):Promise<unknown>;readStore():Promise<{text?:string}>;writeStore(input:{text:string}):Promise<{ok:boolean}>;bookInfo(input:{name:string}):Promise<{available:boolean;uri:string}>;importBook():Promise<{cancelled?:boolean;name:string;storedFile:string;format:'pdf'|'epub'}>;getConfig():Promise<Config>;setConfig(input:{config:unknown}):Promise<Config>;remote(input:unknown):Promise<unknown>;transferBook(input:{name:string;action:string;file?:CloudFile;target?:string}):Promise<CloudFile>}
 const native=registerPlugin<NativeStorage>('WenjianStorage');
 const isNative=Capacitor.isNativePlatform();
 type Store=Envelope&{drafts:Record<string,unknown>};
@@ -35,10 +37,13 @@ const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,
 export function installMobileApi(){window.fetch=async(input,init)=>{
  const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;const route=new URL(url,location.origin).pathname;if(!route.startsWith('/api/'))return originalFetch(input,init);
  try{const payload=typeof init?.body==='string'?JSON.parse(init.body):{},method=init?.method||'GET';
+  if(route==='/api/app/info')return json(isNative?{...await App.getInfo(),platform:'android',arch:'universal'}:{version:PREVIEW_VERSION,build:'preview',platform:'android',arch:'universal'});
+  if(route==='/api/app/releases'){if(isNative)return json((await native.appReleases()).releases);const response=await originalFetch('/api/app/releases');return response;}
+  if(route==='/api/app/open'){if(!validReleaseUrl(payload.url))throw Error('发布链接无效');if(isNative)return json(await native.openRelease({url:payload.url}));window.open(payload.url,'_blank','noopener,noreferrer');return json({ok:true});}
   if(route==='/api/library/import'){const result=await importMobileBook();return json(result?{...result,imported:[result.book]}:{cancelled:true});}
   if(route==='/api/sync/identity')return json(isNative?await native.getSyncIdentity():{provider:'oss',configured:false,target:''});
-  if(route==='/api/sync/settings'){if(!isNative)throw Error('浏览器预览不保存云端密码，请在 App 中配置。');return json(await native.setSyncConnection({config:payload}));}
-  if(route==='/api/sync/test'){if(!isNative)throw Error('预览版本不连接云端');return json(await native.remote({action:'list',target:payload.target}));}
+  if(route==='/api/sync/settings'){if(!isNative)throw Error('浏览器预览不保存云端密码，请在 App 中配置。');return await serial(async()=>{try{return json(await native.setSyncConnection({config:payload}));}finally{cached=undefined;}});}
+  if(route==='/api/sync/connect'||route==='/api/sync/test'||route==='/api/sync/detach'){if(!isNative)throw Error('浏览器预览不连接个人云端，请在 App 中操作。');return await serial(async()=>{try{if(route.endsWith('/detach'))return json(await native.detachSync({target:payload.target||''}));const identity=await native.getSyncIdentity();return json(await native.connectSync({config:route.endsWith('/test')?{...identity,password:''}:payload}));}finally{cached=undefined;}});}
   if(route==='/api/sync/remote'){if(!isNative)throw Error('预览版本不连接云端');return json(await native.remote(payload));}
   if(route==='/api/sync/book'){
    const book=(await mobileSnapshot()).data.libraryBooks.find(b=>b.id===payload.id);if(!book)throw Error('没有找到这本书');
@@ -59,5 +64,5 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
    }
    return json({error:'此操作请在电脑端完成'},501);
   });
- }catch(error){return json({error:error instanceof Error?error.message:'本地操作没有完成'},500);}
+ }catch(error){const text=error instanceof Error?error.message:'本地操作没有完成';const match=/（(401|403|429|507)）/.exec(text);return json({error:text,code:match?Number(match[1]):undefined},500);}
 };}

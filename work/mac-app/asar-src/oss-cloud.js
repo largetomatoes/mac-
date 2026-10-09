@@ -439,6 +439,12 @@ function createOssArchiveClient(rawConfig, options = {}) {
     return syncPrefix + key;
   }
   async function syncRemote({action,key,text}={}) {
+    if(action==='check'){
+      const probe=Buffer.from('{"schema":1,"purpose":"wenjian-connection-check"}'),object=syncPrefix+'connection-check.json';
+      try{await send('PUT',object,{}, {headers:{'content-type':'application/json','x-oss-forbid-overwrite':'true'},body:probe});}catch(error){if(error.status!==409)throw error;}
+      if(!(await send('GET',object)).body.equals(probe))throw new Error('连接检查文件不一致，请检查云端问间目录。');
+      return {ok:true,...await syncRemote({action:'list'})};
+    }
     if(action==='list'){
       const keys=[];let token;
       do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+'changes/','max-keys':1000,...(token?{'continuation-token':token}:{})});

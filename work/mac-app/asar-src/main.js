@@ -2,6 +2,7 @@ const { validSettings, validateCoreTransition, validateReadingTransition } = req
 const {validOcrEntry,mergeOcrPage}=require('./ocr-cache.cjs');
 let notebookQueue=Promise.resolve();
 function serializeNotebook(operation){const result=notebookQueue.then(operation);notebookQueue=result.catch(()=>{});return result;}
+const {allowedReleaseUrl,cachedPublicReleases}=require('./app-updates.cjs');
 const { app, BrowserWindow, Menu, dialog, shell, session, safeStorage } = require('electron');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -13,7 +14,7 @@ const { createAnnotatedPdf } = require('./pdf-export');
 const { MAGIC: BACKUP_MAGIC, exportCompleteBackup, inspectCompleteBackup, restoreCompleteBackup } = require('./complete-backup');
 const { createOssArchiveClient, validateOssConfig } = require('./oss-cloud');
 const {isolateLegacyNotebook}=require('./local-sync-migration.cjs');
-const {createNutstoreClient,validateNutstoreConfig,nutstoreTarget}=require('./nutstore-sync.cjs');
+const {createNutstoreClient,validateNutstoreConfig,nutstoreTarget,canCorrectUnconfirmedSync}=require('./nutstore-sync.cjs');
 const { prepareLocalLibrary } = require('./library-location');
 const { importLibraryFile } = require('./library-import');
 const { readZoteroCatalog } = require('./zotero-local');
@@ -549,6 +550,8 @@ async function handleCloud(request, response, pathname) {
       }
       if (!safeStorage.isEncryptionAvailable()) throw new Error('系统安全存储暂时不可用，无法保存云备份密钥。');
       const config = validateOssConfig({ region: input.region, endpoint: input.endpoint, bucket: input.bucket, prefix: input.prefix, accessKeyId: input.accessKeyId, accessKeySecret });
+      const notebook=await readStore(),connection=await storedSyncConnection();
+      if(connection.provider==='oss'&&notebook.sync?.target&&notebook.sync.target!==cloudTarget(config)&&!canCorrectUnconfirmedSync(notebook.sync))throw new Error('这套资料已有云端历史，请先在三端同步的连接设置中更换资料库。');
       const secretCiphertext = safeStorage.encryptString(config.accessKeySecret).toString('base64');
       await atomicPrivateJson(cloudConfigPath(), { region: config.region, endpoint: config.endpoint, bucket: config.bucket, prefix: config.prefix, accessKeyId: config.accessKeyId, secretCiphertext });
       return jsonReply(response, 200, publicCloudConfig(await storedCloudConfig()));
@@ -594,8 +597,9 @@ async function storedSyncConnection() {
 }
 async function syncIdentity(){
   const connection=await storedSyncConnection(),oss=await storedCloudConfig();
+  const target=connection.provider==='nutstore'?(connection.username?nutstoreTarget(connection):''):(oss?cloudTarget(oss):'');
   return {provider:connection.provider,configured:connection.provider==='nutstore'?!!connection.passwordCiphertext:!!oss,
-    target:connection.provider==='nutstore'?(connection.username?nutstoreTarget(connection):''):(oss?cloudTarget(oss):''),
+    target,verified:!!target&&connection.checkedTarget===target,checkedAt:connection.checkedAt,remoteHasData:!!connection.remoteHasData,
     username:connection.username||'',directory:'问间资料库',legacyFolder:storageMode==='nutstore'?storageDir:null};
 }
 async function activeSyncClient(target){
@@ -606,7 +610,7 @@ async function activeSyncClient(target){
   if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储暂时不可用。');
   return createNutstoreClient({username:stored.username,password:safeStorage.decryptString(Buffer.from(stored.passwordCiphertext,'base64'))});
 }
-async function saveSyncConnection(input){
+async function saveSyncConnection(input,verification){
   if(!['oss','nutstore'].includes(input.provider))throw new Error('请选择同步服务。');
   const current=await readStore(),old=await storedSyncConnection();let next={provider:input.provider},target='';
   if(input.provider==='nutstore'){
@@ -615,9 +619,43 @@ async function saveSyncConnection(input){
     const password=input.password||(sameAccount&&old.passwordCiphertext?safeStorage.decryptString(Buffer.from(old.passwordCiphertext,'base64')):'');
     const config=validateNutstoreConfig({username:input.username,password});target=nutstoreTarget(config);
     next={...next,username:config.username,passwordCiphertext:safeStorage.encryptString(config.password).toString('base64')};
-  }else{const config=await storedCloudConfig();target=config?cloudTarget(config):'';}
-  if(current.sync?.target&&current.sync.target!==target)throw new Error('本资料库已连接另一个云端位置。为保留同步历史，请继续使用原连接；迁移需要另行处理。');
+  }else{const config=await storedCloudConfig();if(!config)throw new Error('请先配置 OSS 连接。');target=cloudTarget(config);}
+  if(current.sync?.target&&current.sync.target!==target){
+    if(!canCorrectUnconfirmedSync(current.sync))throw new Error('这套资料已有云端历史，请在连接设置中选择「更换资料库」。');
+    // A failed first connection must not permanently pin a mistyped account.
+    // Clear only the unconfirmed binding; keep every local operation queued.
+    await writeStore({...current,syncRevision:(current.syncRevision||0)+1,sync:{...current.sync,target:'',enabled:false}});
+  }
+  if(verification)Object.assign(next,{checkedTarget:target,checkedAt:new Date().toISOString(),remoteHasData:verification.keys.length>0});
   await atomicPrivateJson(path.join(app.getPath('userData'),'device-sync-connection.json'),next);return syncIdentity();
+}
+
+async function checkSyncConnection(input){
+  const old=await storedSyncConnection(),current=await readStore();let candidate,client,target;
+  if(input.provider==='nutstore'){
+    const same=String(input.username||'').trim().toLowerCase()===old.username;
+    const password=input.password||(same&&old.passwordCiphertext?safeStorage.decryptString(Buffer.from(old.passwordCiphertext,'base64')):'');
+    candidate={provider:'nutstore',...validateNutstoreConfig({username:input.username,password})};
+    target=nutstoreTarget(candidate);client=createNutstoreClient(candidate);
+  }else if(input.provider==='oss'){
+    candidate={provider:'oss'};const cfg=await activeCloudConfig();target=cloudTarget(cfg);client=createOssArchiveClient(cfg);
+  }else throw new Error('请选择同步服务。');
+  if(current.sync?.target&&current.sync.target!==target&&!canCorrectUnconfirmedSync(current.sync))throw new Error('这套资料已有云端历史，请先在连接设置中选择「更换资料库」。');
+  const verification=await client.syncRemote({action:'check'});
+  return serializeNotebook(()=>saveSyncConnection(candidate,verification));
+}
+
+async function detachSyncConnection(expectedTarget){
+  const current=await readStore();if((current.sync?.target||'')!==expectedTarget)throw new Error('同步状态刚发生变化，请重新打开连接设置。');
+  for(const book of current.data.libraryBooks){if(book.cloudFile&&(!book.storedFile||path.basename(book.storedFile)!==book.storedFile||!fs.existsSync(path.join(libraryDir,book.storedFile))))throw new Error('《'+book.title+'》只在云端，请先打开并下载这本书，再更换资料库。');}
+  const backupDir=path.join(app.getPath('userData'),'restore-safeguards');await fsp.mkdir(backupDir,{recursive:true});
+  const destination=path.join(backupDir,'更换同步资料库-'+Date.now()+'.wenjian-backup');
+  await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination,validateNotebook:value=>Number.isInteger(value.version)&&validNotebookData(value.data)});
+  const connection=await storedSyncConnection();await atomicPrivateJson(destination+'.connection.json',connection);
+  const data={...current.data,libraryBooks:current.data.libraryBooks.map(book=>{const {cloudFile,...local}=book;return local;})};
+  await writeStore({...current,version:current.version+1,syncRevision:(current.syncRevision||0)+1,data,sync:{schema:1,device:crypto.randomUUID(),enabled:false,target:'',operations:[],pending:[],received:[],published:[],observed:{}}});
+  await atomicPrivateJson(path.join(app.getPath('userData'),'device-sync-connection.json'),{provider:connection.provider||'nutstore'});
+  return {backupPath:destination,identity:await syncIdentity()};
 }
 
 async function handleDeviceSync(request,response,url) {
@@ -628,8 +666,10 @@ async function handleDeviceSync(request,response,url) {
     if(route==='identity')return jsonReply(response,200,await syncIdentity());
     if(route==='local')return jsonReply(response,200,{...await readStore(),storage:storageMode});
     const input=await requestBody(request);
+    if(route==='connect')return jsonReply(response,200,await checkSyncConnection(input));
+    if(route==='detach')return await serializeNotebook(async()=>jsonReply(response,200,await detachSyncConnection(input.target)));
     if(route==='settings')return await serializeNotebook(async()=>jsonReply(response,200,await saveSyncConnection(input)));
-    if(route==='test')return jsonReply(response,200,await (await activeSyncClient(input.target)).syncRemote({action:'list'}));
+    if(route==='test')return jsonReply(response,200,await checkSyncConnection({provider:(await storedSyncConnection()).provider,username:(await storedSyncConnection()).username,password:''}));
     if(route==='open-folder'){if(storageMode!=='nutstore')throw new Error('没有连接坚果云本机目录。');const error=await shell.openPath(storageDir);if(error)throw new Error(error);return jsonReply(response,200,{ok:true});}
     if(route==='commit')return await serializeNotebook(async()=>{
       if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份'});
@@ -651,17 +691,34 @@ async function handleDeviceSync(request,response,url) {
       if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
       if(input.action==='upload'){
         const cloudFile=await client.uploadBook(destination,book.format);
-        return await serializeNotebook(async()=>{const current=await readStore();const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data});return jsonReply(response,200,{cloudFile});});
+        return await serializeNotebook(async()=>{const current=await readStore();if(current.sync?.target!==input.target)throw new Error('同步连接已变化，书籍清单暂未写入。');const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data});return jsonReply(response,200,{cloudFile});});
       }
     }
     return jsonReply(response,404,{error:'不支持的同步操作'});
-  }catch(error){return jsonReply(response,500,{error:error.message||'同步暂时无法完成'});}
+  }catch(error){return jsonReply(response,500,{error:error.message||'同步暂时无法完成',code:error.status});}
+}
+
+async function handleAppUpdates(request,response,url){
+  const pathname=url.pathname;
+  const origin=`http://127.0.0.1:${localPort}`;
+  if(request.headers.host!==`127.0.0.1:${localPort}`||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
+  try{
+    if(pathname==='/api/app/info'&&request.method==='GET')return jsonReply(response,200,{version:app.getVersion(),build:String(require('./package.json').buildVersion||''),platform:process.platform,arch:process.arch});
+    if(pathname==='/api/app/releases'&&request.method==='GET')return jsonReply(response,200,await cachedPublicReleases(path.join(app.getPath('userData'),'update-check-cache.json'),url.searchParams.get('manual')==='1'));
+    if(pathname==='/api/app/open'&&request.method==='POST'){
+      const value=await requestBody(request);
+      if(!allowedReleaseUrl(value.url))return jsonReply(response,400,{error:'发布链接无效'});
+      await shell.openExternal(value.url);return jsonReply(response,200,{ok:true});
+    }
+    return jsonReply(response,405,{error:'不支持的更新操作'});
+  }catch(error){return jsonReply(response,500,{error:error.message||'更新检查未完成'});}
 }
 
 async function startServer() {
   server = http.createServer((request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/api/backup/restore' && request.method === 'POST') { if(request.headers.origin && request.headers.origin !== `http://127.0.0.1:${localPort}`)return jsonReply(response,403,{error:'来源不匹配'}); void restoreBackup().then(()=>jsonReply(response,200,{finished:true})).catch(()=>jsonReply(response,500,{error:'无法恢复备份'})); }
+    else if (url.pathname.startsWith('/api/app/')) void handleAppUpdates(request,response,url);
     else if (url.pathname.startsWith('/api/sync/')) void handleDeviceSync(request,response,url);
     else if (url.pathname === '/api/notebook') void serializeNotebook(()=>handleApi(request, response));
     else if (url.pathname === '/api/drafts') handleDrafts(request, response);

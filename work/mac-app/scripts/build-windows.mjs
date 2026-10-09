@@ -60,7 +60,7 @@ async function prepare() {
     await requireFile(path.join(spaDist, name));
   }
   await requireFile(path.join(macAppRoot, 'seed.json'));
-  for (const name of ['main.js', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'library-import.js', 'zotero-local.js', 'package.json']) {
+  for (const name of ['main.js', 'app-updates.cjs', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'library-import.js', 'zotero-local.js', 'package.json']) {
     await requireFile(path.join(macAppRoot, 'asar-src', name));
   }
 

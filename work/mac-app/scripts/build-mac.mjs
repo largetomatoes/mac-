@@ -39,7 +39,7 @@ async function prepare() {
     await requireFile(path.join(spaDist, name));
   }
   for (const name of ['seed.json', 'AppIcon.icns', 'native-Info.plist']) await requireFile(path.join(appRoot, name));
-  for (const name of ['main.js', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'library-import.js', 'zotero-local.js', 'package.json']) {
+  for (const name of ['main.js', 'app-updates.cjs', 'pdf-export.js', 'complete-backup.js', 'oss-cloud.js', 'library-location.js', 'library-import.js', 'zotero-local.js', 'package.json']) {
     await requireFile(path.join(appRoot, 'asar-src', name));
   }
 

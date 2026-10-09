@@ -1,0 +1,21 @@
+.chapter-note-sections{margin-top:24px;min-width:0}
+.chapter-note-group{border:1px solid #dfdfd3;border-radius:12px;margin:10px 0;background:#fcfcf7;overflow:hidden}
+.chapter-note-group>summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:15px 16px;min-height:48px;list-style:none;color:#53664b}
+.chapter-note-group>summary::-webkit-details-marker{display:none}
+.chapter-note-group>summary strong{flex:1;min-width:0;overflow-wrap:anywhere;font-size:14px;font-weight:500}
+.chapter-note-group>summary span{font-size:12px;color:#929785;font-variant-numeric:tabular-nums}
+.chapter-note-group[open]>summary svg{transform:rotate(90deg)}
+.chapter-note-body{padding:0 16px 16px;min-width:0}
+.chapter-note-body article{padding:18px 0;border-top:1px solid #e7e8dd;min-width:0}
+.chapter-note-body article>header{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#8c907e}
+.chapter-note-body article>header time{flex-shrink:0}
+.chapter-note-body blockquote{border-left:2px solid #bcc8ac;padding:3px 12px;margin:12px 0;color:#747961;font-size:13px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.chapter-note-body p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;font-size:14px}
+.chapter-note-body aside{border-left:2px solid #d8ddcc;padding-left:12px;margin:14px 0}.chapter-note-body aside small,.chapter-note-body aside em{font-size:11px;color:#969780}
+.chapter-note-body footer{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;color:#768565;font-size:12px}
+.chapter-note-body footer button,.chapter-add-note{min-height:36px;cursor:pointer}
+.chapter-add-note{display:flex;align-items:center;gap:6px;font-size:12px;color:#738564;margin:6px 0 12px}
+.chapter-empty{padding:12px 0;color:#9b9d8c;font-size:13px}
+.book-note-heading{display:flex;justify-content:space-between;align-items:center;margin-top:24px}.book-note-heading h3{font-size:14px;color:#6d7b59}.book-note-heading span{color:#a2a594;font-size:12px}
+.book-thought-chapter{display:grid;gap:8px;font-size:12px;color:#879275}
+.book-thought-create fieldset{max-height:150px;overflow:auto}
