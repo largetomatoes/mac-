@@ -3,8 +3,11 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const {defaultTransport} = require('./oss-cloud');
 const ROOT = '/dav/问间资料库/sync-v1/';
+const BACKUP_ROOT = '/dav/问间资料库/';
+const BACKUP_NAME = /^[^/\\]{1,255}\.wenjian-backup$/;
 const MAX_BOOK = 500 * 1000 * 1000;
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+function validBackupName(name) { return typeof name === 'string' && !/[\x00-\x1f\x7f]/.test(name) && BACKUP_NAME.test(name); }
 function validateNutstoreConfig(input) {
   const username = String(input?.username || '').trim().toLowerCase();
   const password = input?.password;
@@ -43,6 +46,30 @@ function children(xml, folder) {
     return /<(?:[\w-]+:)?collection(?:\s[^>]*)?\/?>/.test(block[1])?child.replace(/\/?$/,'/'):child;
   }).filter(Boolean);
 }
+function backupEntries(xml, folder) {
+  if (!/<(?:[\w-]+:)?multistatus[\s>]/.test(xml) || !/<\/(?:[\w-]+:)?multistatus>/.test(xml) || /<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('坚果云目录响应不完整。');
+  const blocks = [...xml.matchAll(/<(?:[\w-]+:)?response[\s>]([\s\S]*?)<\/(?:[\w-]+:)?response>/g)];
+  if (!blocks.length) throw new Error('坚果云目录响应为空，未合并。');
+  if (blocks.length >= 750) throw new Error('坚果云目录达到单次读取上限，已暂停读取。');
+  const entries = [];
+  for (const block of blocks) {
+    const raw = block[1];
+    const href = /<(?:[\w-]+:)?href[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?href>/.exec(raw);
+    if (!href) throw new Error('坚果云目录缺少文件地址。');
+    const url = new URL(decodeXml(href[1]), 'https://dav.jianguoyun.com');
+    if (url.origin !== 'https://dav.jianguoyun.com') throw new Error('坚果云返回了外部地址。');
+    const pathname = decodeURIComponent(url.pathname);
+    if (!/<(?:[\w-]+:)?status[^>]*>HTTP\/\d(?:\.\d)? 2\d\d/.test(raw)) throw new Error('坚果云文件状态读取失败。');
+    if (pathname.replace(/\/$/, '') === folder.replace(/\/$/, '')) continue;
+    if (!pathname.startsWith(folder) || pathname.slice(folder.length).replace(/\/$/, '').includes('/')) throw new Error('坚果云返回了目录外的文件。');
+    if (/<(?:[\w-]+:)?collection(?:\s[^>]*)?\/?>/.test(raw)) continue;
+    const name = pathname.slice(folder.length);
+    const size = Number(/<(?:[\w-]+:)?getcontentlength[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?getcontentlength>/.exec(raw)?.[1] ?? NaN);
+    const modified = Date.parse(decodeXml(/<(?:[\w-]+:)?getlastmodified[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?getlastmodified>/.exec(raw)?.[1] ?? ''));
+    entries.push({ name, size: Number.isSafeInteger(size) && size >= 0 ? size : 0, modified: Number.isFinite(modified) ? new Date(modified).toISOString() : '' });
+  }
+  return entries;
+}
 function createNutstoreClient(input, options={}) {
   const config=validateNutstoreConfig(input),transport=options.transport||defaultTransport;
   const ensured=new Set();
@@ -73,6 +100,22 @@ function createNutstoreClient(input, options={}) {
   }
   async function uploadBook(filePath,format){if(!['pdf','epub'].includes(format))throw new Error('只支持 PDF / EPUB');const stat=await fsp.stat(filePath);if(!stat.isFile()||stat.size<1||stat.size>MAX_BOOK)throw new Error('坚果云 WebDAV 单本书需小于 500 MB；笔记仍可同步。');const digest=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(filePath))digest.update(chunk);const sha256=digest.digest('hex'),key='books/'+sha256+'.'+format;await ensure();const result=await request('PUT',objectPath(key),{headers:{'If-None-Match':'*','content-length':String(stat.size),'content-type':'application/octet-stream'},uploadPath:filePath});if(result.statusCode===412){const head=success(await request('HEAD',objectPath(key)));if(Number(head.headers['content-length'])!==stat.size)throw new Error('云端书籍大小与本机不一致。');}else success(result);return {key,sha256,size:stat.size};}
   async function downloadBook(file,destination){if(!file||!/^[a-f0-9]{64}$/.test(file.sha256||'')||!['books/'+file.sha256+'.pdf','books/'+file.sha256+'.epub'].includes(file.key)||!Number.isSafeInteger(file.size)||file.size<1||file.size>MAX_BOOK)throw new Error('云端书籍清单无效。');const temporary=destination+'.download-'+crypto.randomUUID();try{const result=success(await request('GET',objectPath(file.key),{downloadPath:temporary,expectedSize:file.size}));if(result.download?.size!==file.size||result.download?.sha256!==file.sha256)throw new Error('书籍校验失败，未替换本机文件。');await fsp.rename(temporary,destination);return {ok:true};}finally{await fsp.unlink(temporary).catch(()=>{});}}
-  return {syncRemote,uploadBook,downloadBook,test:async()=>{await ensure();await listing(ROOT);return {ok:true};}};
+  async function listBackups(){
+    const r=await request('PROPFIND',BACKUP_ROOT,{headers:{Depth:'1','content-type':'application/xml'},body:Buffer.from('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>')});
+    if(r.statusCode===404)return [];
+    success(r);
+    return backupEntries(r.body.toString('utf8'),BACKUP_ROOT).filter(entry=>validBackupName(entry.name));
+  }
+  async function downloadBackup({name,destination}){
+    if(!validBackupName(name))throw new Error('坚果云备份名称不正确。');
+    const temporary=destination+'.download-'+crypto.randomUUID();
+    try{
+      const result=success(await request('GET',BACKUP_ROOT+name,{downloadPath:temporary}));
+      if(!result.download?.size)throw new Error('云端备份为空，未导入。');
+      await fsp.rename(temporary,destination);
+      return {ok:true,size:result.download.size,sha256:result.download.sha256};
+    }finally{await fsp.unlink(temporary).catch(()=>{});}
+  }
+  return {syncRemote,uploadBook,downloadBook,listBackups,downloadBackup,test:async()=>{await ensure();await listing(ROOT);return {ok:true};}};
 }
-module.exports={createNutstoreClient,validateNutstoreConfig,nutstoreTarget,canCorrectUnconfirmedSync,objectPath,children};
+module.exports={createNutstoreClient,validateNutstoreConfig,nutstoreTarget,canCorrectUnconfirmedSync,objectPath,children,validBackupName};

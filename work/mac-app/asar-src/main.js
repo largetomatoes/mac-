@@ -14,7 +14,7 @@ const { createAnnotatedPdf } = require('./pdf-export');
 const { MAGIC: BACKUP_MAGIC, exportCompleteBackup, inspectCompleteBackup, restoreCompleteBackup } = require('./complete-backup');
 const { createOssArchiveClient, validateOssConfig } = require('./oss-cloud');
 const {isolateLegacyNotebook}=require('./local-sync-migration.cjs');
-const {createNutstoreClient,validateNutstoreConfig,nutstoreTarget,canCorrectUnconfirmedSync}=require('./nutstore-sync.cjs');
+const {createNutstoreClient,validateNutstoreConfig,nutstoreTarget,canCorrectUnconfirmedSync,validBackupName}=require('./nutstore-sync.cjs');
 const { prepareLocalLibrary } = require('./library-location');
 const { importLibraryFile } = require('./library-import');
 const { readZoteroCatalog } = require('./zotero-local');
@@ -42,7 +42,7 @@ app.commandLine.appendSwitch('no-pings');
 app.commandLine.appendSwitch('disable-features', 'PushMessaging,BackgroundFetch,PeriodicBackgroundSync,OptimizationHints,MediaRouter');
 app.commandLine.appendSwitch('proxy-server', '127.0.0.1:9');
 app.commandLine.appendSwitch('proxy-bypass-list', 'localhost;127.0.0.1;[::1]');
-app.commandLine.appendSwitch('host-resolver-rules', 'MAP * 0.0.0.0, EXCLUDE localhost');
+app.commandLine.appendSwitch('host-resolver-rules', 'MAP * 0.0.0.0, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]');
 app.setName('问间');
 if (process.env.WENJIAN_TEST_DATA_DIR) app.setPath('userData', process.env.WENJIAN_TEST_DATA_DIR);
 app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: app.getVersion(), version: app.getVersion(), copyright: '围绕核心问题的本地笔记应用' });
@@ -658,6 +658,41 @@ async function detachSyncConnection(expectedTarget){
   return {backupPath:destination,identity:await syncIdentity()};
 }
 
+async function nutstoreBackupCredentials(input){
+  const old=await storedSyncConnection();
+  const username=String(input?.username||old.username||'').trim().toLowerCase();
+  let password=String(input?.password||'');
+  if(!password&&username===old.username&&old.passwordCiphertext){
+    if(!safeStorage.isEncryptionAvailable())throw new Error('系统安全存储暂时不可用。');
+    password=safeStorage.decryptString(Buffer.from(old.passwordCiphertext,'base64'));
+  }
+  return validateNutstoreConfig({username,password});
+}
+async function listNutstoreBackups(input){
+  const client=createNutstoreClient(await nutstoreBackupCredentials(input));
+  return (await client.listBackups()).map(entry=>({id:entry.name,name:entry.name,size:entry.size,createdAt:entry.modified}));
+}
+async function restoreNutstoreBackup(input){
+  if(!validBackupName(input?.id))throw new Error('云端备份名称不正确。');
+  if(input.confirmation!=='恢复')throw new Error('请确认要恢复的云端备份。');
+  if(restorePickerOpen||restoringBackup||cloudBusy)throw new Error('另一项备份或恢复操作正在进行。');
+  const client=createNutstoreClient(await nutstoreBackupCredentials(input));
+  const temporary=path.join(app.getPath('userData'),`nutstore-download-${crypto.randomUUID()}.wenjian-backup`);
+  restoringBackup=true;
+  if(zoteroCatalogJob)await zoteroCatalogJob.catch(()=>{});
+  try{
+    await notebookQueue;await draftQueue;
+    await client.downloadBackup({name:input.id,destination:temporary});
+    await inspectCompleteBackup(temporary,candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data));
+    const backupDir=path.join(app.getPath('userData'),'restore-safeguards');await fsp.mkdir(backupDir,{recursive:true});
+    const backupPath=path.join(backupDir,`恢复前-${Date.now()}-${crypto.randomUUID()}.wenjian-backup`);
+    await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination:backupPath,validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data)});
+    await restoreCompleteBackup({archivePath:temporary,notebookPath:dataPath,libraryDir,draftsPath,validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data),writeNotebook:candidate=>writeStore(candidate),writeDrafts});
+    await fsp.unlink(cloudStatePath()).catch(error=>{if(error.code!=='ENOENT')throw error;});
+    return {finished:true,backupPath};
+  }finally{restoringBackup=false;await fsp.unlink(temporary).catch(()=>{});}
+}
+
 async function handleDeviceSync(request,response,url) {
   const origin='http://127.0.0.1:'+localPort;
   if(request.headers.host!=='127.0.0.1:'+localPort||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
@@ -671,6 +706,8 @@ async function handleDeviceSync(request,response,url) {
     if(route==='settings')return await serializeNotebook(async()=>jsonReply(response,200,await saveSyncConnection(input)));
     if(route==='test')return jsonReply(response,200,await checkSyncConnection({provider:(await storedSyncConnection()).provider,username:(await storedSyncConnection()).username,password:''}));
     if(route==='open-folder'){if(storageMode!=='nutstore')throw new Error('没有连接坚果云本机目录。');const error=await shell.openPath(storageDir);if(error)throw new Error(error);return jsonReply(response,200,{ok:true});}
+    if(route==='backup-list')return jsonReply(response,200,{backups:await listNutstoreBackups(input)});
+    if(route==='backup-restore')return jsonReply(response,200,await restoreNutstoreBackup(input));
     if(route==='commit')return await serializeNotebook(async()=>{
       if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份'});
       const current=await readStore();if(input.version!==current.version||(input.syncRevision||0)!==(current.syncRevision||0))return jsonReply(response,409,{error:'本机刚保存新内容，正在重新合并。'});

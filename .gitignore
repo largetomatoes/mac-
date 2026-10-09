@@ -61,6 +61,7 @@ next-env.d.ts
 !/work/mac-app/local-spa/index.html
 !/work/mac-app/local-spa/main.tsx
 !/work/mac-app/local-spa/vite.config.mjs
+!/work/mac-app/local-spa/cloud-import.js
 !/work/mac-app/AppIcon.iconset/
 !/work/mac-app/AppIcon.iconset/*.png
 !/work/mac-app/AppIcon.icns
