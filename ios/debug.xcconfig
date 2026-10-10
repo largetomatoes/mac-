@@ -1,0 +1,4 @@
+CAPACITOR_DEBUG = true
+
+// 防止 SPM 静态库中的 Capacitor 插件类被链接器死代码剥离
+OTHER_LDFLAGS = $(inherited) -ObjC
