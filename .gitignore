@@ -67,6 +67,7 @@ next-env.d.ts
 !/work/mac-app/AppIcon.icns
 !/work/mac-app/app-icon.svg
 !/work/mac-app/build-icon.mjs
+!/work/mac-app/AppIcon-win.ico
 !/work/mac-app/native-Info.plist
 !/work/mac-app/seed.json
 !/work/mac-app/package.json

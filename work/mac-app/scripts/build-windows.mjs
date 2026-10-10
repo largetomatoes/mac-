@@ -18,6 +18,13 @@ async function requireFile(filePath) {
 }
 
 async function makeWindowsIcon() {
+  // 优先使用重绘后的 7 尺寸高清图标（AppIcon-win.ico）；缺失时回退到 iconset 生成。
+  const redrawn = await readFile(path.join(macAppRoot, 'AppIcon-win.ico')).catch(() => null);
+  if (redrawn && redrawn.subarray(0, 4).equals(Buffer.from([0, 0, 1, 0]))) {
+    const icon = path.join(stage, 'AppIcon.ico');
+    await writeFile(icon, redrawn);
+    return icon;
+  }
   const sizes = [16, 32, 128, 256];
   const images = await Promise.all(sizes.map(async (size) => {
     const file = path.join(macAppRoot, 'AppIcon.iconset', `icon_${size}x${size}.png`);
