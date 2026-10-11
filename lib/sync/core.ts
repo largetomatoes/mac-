@@ -90,7 +90,7 @@ export function materialize(state:SyncState,local:Notebook):{data:Notebook;confl
   else if(collection!=='readingProgress')((data as unknown as Record<string,unknown[]>)[collection]).push(structuredClone(value));
  }
  // Preserve existing order. Newly received records use an explicit stable tie breaker.
- for(const collection of collections){const order=new Map((local[collection]||[]).map((v,i)=>[(v as {id?:string}).id,i]));(data[collection] as unknown as {id?:string;at?:string}[]).sort((a,b)=>(order.get(a.id)??Infinity)-(order.get(b.id)??Infinity)||String(a.at||'').localeCompare(String(b.at||''))||String(a.id||'').localeCompare(String(b.id||'')));}
+ for(const collection of collections){const identity=(v:unknown)=>{const record=v as Record<string,unknown>;return collection==='ocrCache'?JSON.stringify([record.libraryBookId,record.page]):collection==='zoteroCollections'?JSON.stringify([record.serverId,record.key]):String(record.id||'');};const order=new Map((local[collection]||[]).map((v,i)=>[identity(v),i]));(data[collection] as unknown as {id?:string;at?:string}[]).sort((a,b)=>(order.get(identity(a))??Infinity)-(order.get(identity(b))??Infinity)||String(a.at||'').localeCompare(String(b.at||''))||identity(a).localeCompare(identity(b)));}
  for(const book of data.libraryBooks){const progress=heads.get('readingProgress/'+encodeURIComponent(book.id));book.progress=progress?.length?structuredClone((([...progress].sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id))[0].value as {progress?:typeof book.progress})?.progress)||{}):{};}
  if(!data.notes.some(n=>n.id==='world'&&!n.parent))throw Error('同步资料缺少核心问题，未修改本机资料。');
  const ids=new Set([...data.notes.map(n=>n.id),...data.crossThoughts.map(n=>n.id)]);
