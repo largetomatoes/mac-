@@ -76,6 +76,7 @@ next-env.d.ts
 /work/mac-app/scripts/*
 !/work/mac-app/scripts/build-windows.mjs
 !/work/mac-app/scripts/build-mac.mjs
+!/work/mac-app/scripts/archive-windows.py
 
 *.tsbuildinfo
 

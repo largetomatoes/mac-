@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packager } from '@electron/packager';
@@ -108,7 +108,7 @@ if (prepareOnly) {
   const paths = await packager({
     dir: stage,
     out: outputRoot,
-    name: '问间',
+    name: 'Wenjian',
     platform: 'win32',
     arch: 'x64',
     electronVersion: electronManifest.version,
@@ -121,9 +121,13 @@ if (prepareOnly) {
     extraResource: [path.join(resourceStage, 'static'), path.join(macAppRoot, 'seed.json')],
   });
   if (paths.length !== 1) throw new Error('Windows 打包没有生成唯一的应用目录。');
-  const appRoot = paths[0];
-  for (const name of ['问间.exe', 'resources/app.asar', 'resources/static/index.html', 'resources/seed.json']) {
+  const appRoot = path.join(outputRoot, `Wenjian-${version}-win64`);
+  await rm(appRoot, { recursive: true, force: true });
+  await rename(paths[0], appRoot);
+  for (const name of ['Wenjian.exe', 'resources/app.asar', 'resources/static/index.html', 'resources/seed.json']) {
     await requireFile(path.join(appRoot, name));
   }
+  const archive = path.join(macAppRoot, 'release', `Wenjian-${version}-Windows-x64.zip`);
+  execFileSync('python3', [path.join(macAppRoot, 'scripts/archive-windows.py'), appRoot, archive], { stdio: 'inherit' });
   console.log(`问间 Windows x64 ${version} 已打包：${appRoot}`);
 }

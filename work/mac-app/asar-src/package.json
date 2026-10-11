@@ -1,10 +1,10 @@
 {
   "name": "wenjian",
-  "version": "2.4.1",
-  "description": "问间本地 Mac 应用",
+  "version": "2.4.2",
+  "description": "问间桌面笔记应用",
   "main": "main.js",
   "dependencies": {
     "pdf-lib": "1.17.1"
   },
-  "buildVersion": "45"
+  "buildVersion": "46"
 }
