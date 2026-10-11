@@ -1,4 +1,5 @@
 'use client';
+import {thoughtSources,thoughtPrimary,sourceLabel} from '@/lib/book-notebook';
 
 import {useDeferredValue,useEffect,useMemo,useState} from 'react';
 import {Archive,BookOpen,FileText,Lightbulb,Network,Search} from 'lucide-react';
@@ -71,10 +72,11 @@ export function GlobalSearch({open,onOpenChange,data,onOpenItem,onOpenReading,on
    addThoughts(`reading:${reading.id}`,'reading',label,title,reading.thoughts,thoughtId=>onOpenReading(reading.id,thoughtId));
   }
   for(const entry of data.bookThoughts){
-   const label=place(entry.libraryBookId?'读书笔记':'已移除书籍的读书笔记',entry.bookTitle,entry.chapter||entry.locator||'全书');
-   const title=`《${entry.bookTitle}》`;
-   const openEntry=()=>entry.libraryBookId?onOpenBook(entry.libraryBookId,entry.sourceLocation,entry.id):onOpenDetachedBookThought(entry.id);
-   add({id:`bookThought:${entry.id}`,kind:'bookThought',label,title,fields:[field(entry.text,1.15),field(entry.quote||''),field(place(entry.bookTitle,entry.chapter,entry.locator),.65)],open:openEntry});
+   const sources=thoughtSources(entry),primary=thoughtPrimary(entry,data.libraryBooks);
+   const title=sources.map(source=>`《${source.bookTitle}》`).filter((label,index,all)=>all.indexOf(label)===index).join(' ↔ ');
+   const label=place(entry.sources?.length?'共同思考':primary?'读书笔记':'已移除书籍的读书笔记',sources.map(sourceLabel).join(' ↔ '));
+   const openEntry=()=>primary?.libraryBookId?onOpenBook(primary.libraryBookId,primary.sourceLocation,entry.id):onOpenDetachedBookThought(entry.id);
+   add({id:`bookThought:${entry.id}`,kind:'bookThought',label,title,fields:[field(entry.text,1.15),...sources.flatMap(source=>[field(source.quote||''),field(source.noteText||''),field(sourceLabel(source),.65)])],open:openEntry});
    addThoughts(`bookThought:${entry.id}`,'bookThought',label,title,entry.thoughts,()=>openEntry());
   }
   for(const manuscript of data.manuscripts){

@@ -1,3 +1,4 @@
+const {detachThoughtBook}=require('./book-thought-sources.cjs');
 const { validSettings, validateCoreTransition, validateReadingTransition } = require('./notebook-settings.cjs');
 const {validOcrEntry,mergeOcrPage}=require('./ocr-cache.cjs');
 let notebookQueue=Promise.resolve();
@@ -336,14 +337,7 @@ async function handleLibraryDelete(request, response) {
         delete kept.sourceLocation;
         return kept;
 	      }),
-	      bookThoughts: current.data.bookThoughts.map((entry) => {
-	        if (entry.libraryBookId !== book.id) return entry;
-	        if (replacementBook) return { ...entry, libraryBookId: replacementBook.id };
-	        const kept = { ...entry };
-	        delete kept.libraryBookId;
-	        delete kept.sourceLocation;
-	        return kept;
-	      })
+	      bookThoughts: current.data.bookThoughts.map(entry=>detachThoughtBook(entry,book.id,replacementBook?.id,current.data.libraryBooks.filter(item=>item.id!==book.id).map(item=>item.id)))
     };
     await writeStore({ version: current.version + 1, data });
     if (stagedFile) await fsp.unlink(stagedFile).catch(() => {});

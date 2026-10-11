@@ -1,4 +1,4 @@
-# 问间 2.1
+# 问间 2.3
 
 问间是围绕使用者自己的核心问题组织问题、回答、卡片、阅读笔记和文稿的本地应用。想法可以先留在卡片集中，之后再连接到一个或多个问题；搜索可以直接找到某条思考、回应或书中的笔记。
 
@@ -38,7 +38,7 @@
 
 同步问题、笔记、批注、分类、阅读进度及书籍原件；手机打开云端书籍时按需下载并校验。离线变更先保存在本机，同一记录同时修改时保留版本供选择。未提交输入草稿仅保存在本机。应用前台 OSS 每分钟、坚果云每五分钟检查一次，也可立即同步；坚果云单本书需小于 500 MB。旧坚果云同步目录的笔记会先复制核验再切换到独立本地目录，原目录保留。
 
-本版本以预发布形式提供：Mac 已实际安装检查，Android 已在模拟器安装启动；Windows 实机、安卓真机交互和真实云账号三端联网验收尚未完成。详细构建及验证范围见 [移动版说明](mobile/README.md)。
+2.3 电脑端在 Mac 上完成阅读与资料保留检查。Windows 安装包已构建，未在 Windows 实机验证；移动版与真实云账号的跨端验收范围沿用对应版本说明。详细构建及验证范围见 [移动版说明](mobile/README.md)。
 
 ## 阿里云 OSS 云备份
 
@@ -59,6 +59,7 @@ npm ci
 npm run build
 npm run lint
 node --test tests/test-complete-backup.cjs tests/test-oss-cloud.cjs tests/test-search-ranking.mjs tests/test-pdf-export.cjs
+node tests/test-desktop-comparison.mjs
 node scripts/test-cross-blocks.mjs
 node scripts/test-graph-projection.mjs
 npm ci --prefix work/mac-app
@@ -69,6 +70,10 @@ npm run package:win --prefix work/mac-app # 在 Windows x64 上
 仓库只包含代码、图标和空白种子数据；用户笔记、密钥、电子书、构建产物不纳入 Git。Mac 和 Windows 安装包目前通过本机打包并上传到 GitHub Releases；自动发布尚未启用。
 
 ## 当前版本
+
+2.3.0（电脑端 build 43）：双书对照阅读，支持 PDF / EPUB 混合与同书不同位置。两栏独立翻页、搜索和缩放，可交换、调整分栏宽度、临时放大或上下排布。共同思考保留多段原文与自己的表述，以一条记录出现在各本书的对应章节中；可关联问题、搜索、作为文稿素材，修订时保留旧内容和原因。两栏阅读位置及未提交草稿保存在本机。此版本仅提供 Mac / Windows，移动版沿用 2.2.0。
+
+2.2.0：按书、按章节整理笔记，Mac / Android 更新提示。
 
 2.1.0（build 38，预发布）：Android 阅读版、OSS / 坚果云三端增量同步、可见的连接与同步状态。修正 Android 离线 OCR 字库打包路径、移动 PDF WebView 兼容性及桌面版本显示。三个系统的安装包均为空白版本，不包含个人数据或签名密钥。
 

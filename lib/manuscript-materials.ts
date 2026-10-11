@@ -1,3 +1,4 @@
+import {thoughtSources,thoughtPrimary,sourceLabel} from './book-notebook';
 import {type Notebook,type ManuscriptLink,type Thought,ROOT,numberOf,crossNumber,crossSignature} from './notebook';
 
 export type MaterialKind='heading'|'original'|'quote'|'understanding'|'thought'|'reply';
@@ -26,7 +27,7 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
  const addScope=(scope:MaterialScope)=>{if(!scopes.some(item=>item.id===scope.id))scopes.push(scope);};
  const bookScope=(id:string|undefined,title:string)=>id?`book:${id}`:`book-title:${title}`;
  for(const book of data.libraryBooks)addScope({id:bookScope(book.id,book.title),kind:'book',label:book.title});
- const readingBooks=[...data.readingNotes.map(item=>({id:item.libraryBookId,title:item.book})),...data.bookThoughts.map(item=>({id:item.libraryBookId,title:item.bookTitle}))];
+ const readingBooks=[...data.readingNotes.map(item=>({id:item.libraryBookId,title:item.book})),...data.bookThoughts.flatMap(item=>thoughtSources(item).map(source=>({id:source.libraryBookId,title:source.bookTitle})))];
  for(const book of readingBooks)addScope({id:bookScope(book.id,book.title),kind:'book',label:book.title});
  const add=(source:ManuscriptSourceSnapshot,scopeIds:string[])=>{if(source.text.trim())materials.push({...source,scopeIds:[...new Set(scopeIds)]});};
  const appendThoughts=(thoughts:Thought[],context:Omit<ManuscriptSourceSnapshot,'key'|'kind'|'text'|'at'>,scopeIds:string[])=>{
@@ -76,10 +77,14 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
   appendThoughts(reading.thoughts,context,scopeIds);
  }
  for(const entry of data.bookThoughts){
-  const scopeIds=[...entry.questionIds.flatMap(scopeAncestors),bookScope(entry.libraryBookId,entry.bookTitle)];
-  const citation=[entry.bookTitle?`《${entry.bookTitle}》`:'',entry.chapter,entry.locator].filter(Boolean).join(' · ');
-  const context={label:`本书思考 · ${entry.bookTitle}`,citation,targetKind:'bookThought' as const,targetId:entry.id,libraryBookId:entry.libraryBookId,sourceLocation:entry.sourceLocation};
-  if(entry.quote)add({...context,key:`bookThought:${entry.id}:quote`,kind:'quote',text:entry.quote,at:entry.at,origin:'引用原文'},scopeIds);
+  const sources=thoughtSources(entry),primary=thoughtPrimary(entry,data.libraryBooks)||sources[0];
+  const scopeIds=[...entry.questionIds.flatMap(scopeAncestors),...sources.map(source=>bookScope(source.libraryBookId,source.bookTitle))];
+  const citation=sources.map(sourceLabel).join(' ↔ ');
+  const context={label:`${entry.sources?.length?'共同思考':'本书思考'} · ${sources.map(source=>source.bookTitle).join(' ↔ ')}`,citation,targetKind:'bookThought' as const,targetId:entry.id,libraryBookId:primary.libraryBookId,sourceLocation:primary.sourceLocation};
+  for(const source of sources){
+   if(source.quote)add({...context,key:entry.sources?.length?`bookThought:${entry.id}:quote:${source.id}`:`bookThought:${entry.id}:quote`,citation:sourceLabel(source),kind:'quote',text:source.quote,at:entry.at,origin:'引用原文'},scopeIds);
+   if(source.noteText)add({...context,key:`bookThought:${entry.id}:reference:${source.id}`,citation:sourceLabel(source),kind:'understanding',text:source.noteText,at:entry.at,origin:'既有笔记'},scopeIds);
+  }
   add({...context,key:`bookThought:${entry.id}:text`,kind:'understanding',text:entry.text,at:entry.at,origin:'自己的思考'},scopeIds);
   appendThoughts(entry.thoughts,context,scopeIds);
  }

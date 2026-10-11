@@ -1,0 +1,43 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import path from 'node:path';
+import ts from 'typescript';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+const modules=new Map();
+function load(file){file=path.resolve(file);if(modules.has(file))return modules.get(file);const module={exports:{}};modules.set(file,module.exports);vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>name.startsWith('.')?(name.endsWith('.cjs')?require(path.resolve(path.dirname(file),name)):load(path.resolve(path.dirname(file),name+'.ts'))):require(name),URL,crypto:globalThis.crypto,structuredClone});return module.exports;}
+
+const books=load('lib/book-notebook.ts'),{rebaseReading}=load('lib/reading-save.ts');
+const a={id:'a',title:'书甲',format:'pdf',progress:{page:1},pdfChapters:[{title:'甲章',startPage:1}]},b={id:'b',title:'书乙',format:'epub',progress:{cfi:'first'}};
+const sourceA={id:'sa',libraryBookId:'a',bookTitle:'书甲',chapter:'甲章',locator:'第 1 页',sourceLocation:'pdf:1',quote:'保留原文：空 格、换行\n和标点。'},sourceB={id:'sb',libraryBookId:'b',bookTitle:'书乙',chapter:'乙章',locator:'乙章',sourceLocation:'epubcfi(/6/2!/4/2:0)',quote:'第二本书的原话。',readingNoteId:'old',noteText:'旧理解保留原话。'};
+const thought=books.withThoughtSources({id:'shared',bookTitle:'',text:'我的共同思考。',scope:'location',locator:'',questionIds:['world'],at:'2026-10-11T00:00:00Z',thoughts:[]},[sourceA,sourceB]);
+const root={id:'world',parent:null,kind:'question',title:'核心问题',body:'',order:0,thoughts:[],revisions:[]};
+const base={notes:[root],libraryBooks:[a,b],readingNotes:[],bookThoughts:[],cards:[],ocrCache:[],manuscripts:[],crossThoughts:[],links:[],thoughtReplies:[],dismissedSuggestions:[]};
+const clone=value=>JSON.parse(JSON.stringify(value));
+const left=clone(base);left.bookThoughts.push(thought);left.libraryBooks[0].progress.page=2;
+const right=clone(base);right.readingNotes.push({id:'old',libraryBookId:'b',book:'书乙',author:'',chapter:'乙章',interpretation:'旧理解保留原话。',quote:'第二本书的原话。',locator:'乙章',questionIds:['world'],at:'2026-10-11',thoughts:[]});right.libraryBooks[1].progress.cfi='second';
+const merged=rebaseReading(base,left,right);
+assert.equal(merged.bookThoughts.length,1);assert.equal(merged.readingNotes.length,1);assert.equal(merged.libraryBooks[0].progress.page,2);assert.equal(merged.libraryBooks[1].progress.cfi,'second');
+assert.equal(JSON.stringify(merged.bookThoughts[0].sources),JSON.stringify([sourceA,sourceB]),'exact source text is retained');
+const sameBook=clone(base);sameBook.libraryBooks[0].progress.rotation=90;
+assert.equal(rebaseReading(base,left,sameBook).libraryBooks[0].progress.rotation,90,'page changes preserve independently saved rotation');
+const removed=clone(base);removed.libraryBooks=removed.libraryBooks.filter(book=>book.id!=='a');
+assert.equal(rebaseReading(base,left,removed).libraryBooks.some(book=>book.id==='a'),false,'stale progress never resurrects removed books');
+const conflicted=clone(merged),edited=clone(merged);conflicted.bookThoughts[0].text='另一处修改';edited.bookThoughts[0].text='这处修改';
+assert.throws(()=>rebaseReading(merged,edited,conflicted),/草稿已保留/,'conflicting text edits are not silently overwritten');
+const groups=books.notebookBooks(merged);
+assert.equal(groups.length,2);assert.equal(groups.find(group=>group.book.id==='a').entries[0].note.id,'shared');
+const bGroup=groups.find(group=>group.book.id==='b');assert.equal(bGroup.entries.filter(entry=>entry.kind==='reading').length,1);
+assert.equal(books.chapterNotes(bGroup.entries,b)[0].title,'乙章','each book uses its own chapter context');
+assert.equal(books.thoughtBookEntries(thought,'a')[0].source.quote,sourceA.quote);
+const {detachThoughtBook}=require('../work/mac-app/asar-src/book-thought-sources.cjs');
+const detached=detachThoughtBook(thought,'a');assert.equal(detached.libraryBookId,'b');assert.equal(detached.sources[0].quote,sourceA.quote);assert.equal(detached.sources[0].libraryBookId,'a','missing source identity is retained');
+assert.equal(books.thoughtPrimary(detached,[b]).libraryBookId,'b');const allRemoved=detachThoughtBook(detached,'b',undefined,[]);assert.equal(allRemoved.libraryBookId,undefined);assert.equal(allRemoved.sources.length,2);assert.equal(allRemoved.sources[0].quote,sourceA.quote);
+assert.equal(detachThoughtBook(thought,'a','a2').sources[0].libraryBookId,'a2');
+const before=JSON.stringify(merged);const {buildManuscriptMaterials}=load('lib/manuscript-materials.ts');
+{const catalog=buildManuscriptMaterials(merged);const shared=catalog.materials.find(item=>item.key==='bookThought:shared:text');assert(shared.scopeIds.includes('book:a'));assert(shared.scopeIds.includes('book:b'));assert.equal(catalog.materials.find(item=>item.key==='bookThought:shared:quote:sa').text,sourceA.quote);}
+assert.equal(JSON.stringify(merged),before,'grouping, retrieval and composition do not rewrite records');
+const {validateReadingTransition}=require('../lib/notebook-settings.cjs');assert.equal(validateReadingTransition(base,merged),'');const revised=clone(merged);revised.bookThoughts[0].text='重新表述';assert.match(validateReadingTransition(merged,revised),/修改原因/);revised.bookThoughts[0].revisions=[{id:'r1',text:thought.text,sources:thought.sources,questionIds:thought.questionIds,at:'2026-10-11T01:00:00Z',reason:'对照新原文后修改'}];assert.equal(validateReadingTransition(merged,revised),'');
+const sync=load('lib/sync/core.ts');let sequence=0;const captured=sync.capture(sync.newSyncState('test-desktop'),merged,()=>`test-op-${++sequence}`);const arrived=sync.materialize(captured,base);assert.equal(arrived.data.bookThoughts.length,1);assert.equal(JSON.stringify(arrived.data.bookThoughts[0].sources),JSON.stringify(thought.sources),'sync round trip retains both sources on one record');
+console.log('Shared thought identity, both-book chapter retrieval, exact quotes, concurrent pane saves, removed source preservation and edit conflict checks passed');
