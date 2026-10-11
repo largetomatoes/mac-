@@ -8,7 +8,7 @@ import {Popover,PopoverTrigger,PopoverContent} from './ui/popover';
 import {Textarea} from './ui/textarea';
 import {Input} from './ui/input';
 import {readDraft,writeDraft} from '@/lib/draft-storage';
-import {sourceLabel,thoughtSources,withThoughtSources} from '@/lib/book-notebook';
+import {sourceLabel,thoughtSources,withThoughtSources,addThoughtSource} from '@/lib/book-notebook';
 import {type BookThought,type BookThoughtSource,crossNumber,numberOf} from '@/lib/notebook';
 import './desktop-comparison.css';
 
@@ -44,9 +44,7 @@ export function DesktopComparison({request,onClose,...reader}:Props){
  function activate(side:'left'|'right'){setActivePane(side);setDraft(current=>({...current,lastActive:side}));}
  function sourcesForPair(){return [draftRef.current.left,draftRef.current.right].filter((source):source is BookThoughtSource=>!!source).map(source=>({...source,id:crypto.randomUUID()}));}
  function addSource(source:BookThoughtSource){setDraft(current=>{
-  const sources=current.sources.length?[...current.sources]:sourcesForPair();
-  const same=sources.some(item=>item.libraryBookId===source.libraryBookId&&item.sourceLocation===source.sourceLocation&&item.quote===source.quote&&item.readingNoteId===source.readingNoteId&&item.bookThoughtId===source.bookThoughtId);
-  if(!same){const placeholder=sources.findIndex(item=>item.libraryBookId===source.libraryBookId&&!item.quote&&!item.readingNoteId&&!item.bookThoughtId);if(placeholder>=0)sources[placeholder]=source;else sources.push(source);}
+  const sources=addThoughtSource(current.sources.length?current.sources:sourcesForPair(),source);
   return {...current,sources,editorOpen:true};
  });setEnlarged(null);}
  function newThought(){if(draft.text.trim()||draft.sources.length){setDraft(current=>({...current,editorOpen:true}));return;}setDraft(current=>({...current,sources:sourcesForPair(),editorOpen:true}));}

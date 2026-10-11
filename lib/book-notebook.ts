@@ -57,3 +57,11 @@ export function withThoughtSources(note:BookThought,sources:BookThoughtSource[])
  const first=sources[0];if(!first)throw Error('思考至少需要保留一个来源。');
  return {...note,sources,libraryBookId:first.libraryBookId,bookTitle:first.bookTitle,chapter:first.chapter,locator:first.locator,sourceLocation:first.sourceLocation,quote:first.quote};
 }
+
+export function addThoughtSource(existing:BookThoughtSource[],source:BookThoughtSource):BookThoughtSource[]{
+ if(existing.some(item=>item.libraryBookId===source.libraryBookId&&item.sourceLocation===source.sourceLocation&&item.quote===source.quote&&item.readingNoteId===source.readingNoteId&&item.bookThoughtId===source.bookThoughtId))return existing;
+ const candidates=existing.map((item,index)=>({item,index})).filter(({item})=>item.libraryBookId===source.libraryBookId&&!item.quote&&!item.readingNoteId&&!item.bookThoughtId);
+ const exact=candidates.find(({item})=>item.sourceLocation===source.sourceLocation),placeholder=exact?.index??(candidates.length===1?candidates[0].index:-1);
+ if(placeholder<0)return [...existing,source];
+ return existing.map((item,index)=>index===placeholder?source:item);
+}
