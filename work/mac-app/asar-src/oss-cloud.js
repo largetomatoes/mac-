@@ -435,10 +435,19 @@ function createOssArchiveClient(rawConfig, options = {}) {
 
   const syncPrefix = config.prefix + 'sync-v1/';
   function syncKey(key) {
-    if (typeof key !== 'string' || !/^(changes\/[a-f0-9]{64}\.json|books\/[a-f0-9]{64}\.(pdf|epub))$/.test(key)) throw new Error('同步对象名称不正确。');
+    if (typeof key !== 'string' || !/^(changes\/[a-f0-9]{64}\.json|books\/[a-f0-9]{64}\.(pdf|epub)|snapshots\/[a-f0-9]{64}\.json|epochs\/[a-zA-Z0-9_-]{8,100}\/changes\/[a-f0-9]{64}\.json)$/.test(key)) throw new Error('同步对象名称不正确。');
     return syncPrefix + key;
   }
-  async function syncRemote({action,key,text}={}) {
+  async function syncRemote({action,key,text,etag,epoch}={}) {
+    if(epoch&&epoch!=='legacy'&&!/^[a-zA-Z0-9_-]{8,100}$/.test(epoch))throw new Error('同步世代无效。');
+    if(action==='control-get'||action==='control-put'){
+      if(!['library.json','lease.json'].includes(key))throw new Error('同步控制文件无效。');const object=syncPrefix+key;
+      if(action==='control-get'){try{const r=await send('GET',object);return {text:r.body.toString('utf8'),etag:r.headers?.etag||null};}catch(e){if(e.status===404)return {text:null,etag:null};throw e;}}
+      if(typeof text!=='string'||Buffer.byteLength(text)>65536)throw new Error('同步控制内容无效。');await send('PUT',object,{}, {headers:{'content-type':'application/json',...(etag?{'If-Match':etag}:{'If-None-Match':'*'})},body:Buffer.from(text)});return {ok:true};
+    }
+    if(action==='guard'){await send('PUT',syncPrefix+'changes/upgrade-required.json',{}, {body:Buffer.from('{"minimumVersion":"2.4.0"}')});return {ok:true};}
+    if(action==='delete'){if(!/^(changes\/[a-f0-9]{64}\.json|epochs\/[a-zA-Z0-9_-]{8,100}\/changes\/[a-f0-9]{64}\.json|snapshots\/[a-f0-9]{64}\.json)$/.test(key||''))throw new Error('只能清理旧同步批次。');try{await send('DELETE',syncKey(key));}catch(e){if(e.status!==404)throw e;}return {ok:true};}
+
     if(action==='check'){
       const probe=Buffer.from('{"schema":1,"purpose":"wenjian-connection-check"}'),object=syncPrefix+'connection-check.json';
       try{await send('PUT',object,{}, {headers:{'content-type':'application/json','x-oss-forbid-overwrite':'true'},body:probe});}catch(error){if(error.status!==409)throw error;}
@@ -447,15 +456,15 @@ function createOssArchiveClient(rawConfig, options = {}) {
     }
     if(action==='list'){
       const keys=[];let token;
-      do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+'changes/','max-keys':1000,...(token?{'continuation-token':token}:{})});
-        const xml=result.body.toString('utf8');for(const block of xmlBlocks(xml,'Contents')) {const k=xmlTag(block,'Key');if(k?.startsWith(syncPrefix)){const relative=k.slice(syncPrefix.length);syncKey(relative);keys.push(relative);}}
+      do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+(epoch&&epoch!=='legacy'?'epochs/'+epoch+'/changes/':'changes/'),'max-keys':1000,...(token?{'continuation-token':token}:{})});
+        const xml=result.body.toString('utf8');for(const block of xmlBlocks(xml,'Contents')) {const k=xmlTag(block,'Key');if(k?.startsWith(syncPrefix)){const relative=k.slice(syncPrefix.length);if(relative==='changes/upgrade-required.json')continue;syncKey(relative);keys.push(relative);}}
         const next=xmlTag(xml,'NextContinuationToken');if(xmlTag(xml,'IsTruncated')==='true'&&(!next||next===token))throw new Error('同步目录分页失败。');token=xmlTag(xml,'IsTruncated')==='true'?next:null;
       }while(token);return {keys};
     }
-    const object=syncKey(key);if(!key.startsWith('changes/'))throw new Error('书籍应通过文件传输接口访问。');
+    const object=syncKey(key);if(key.startsWith('books/'))throw new Error('书籍应通过文件传输接口访问。');
     if(action==='get'){const r=await send('GET',object);return {text:r.body.toString('utf8')};}
     if(action==='put') {if(typeof text!=='string'||Buffer.byteLength(text)>16*1024*1024)throw new Error('同步批次过大。');
-      if(crypto.createHash('sha256').update(text).digest('hex')!==key.slice(8,-5))throw new Error('同步校验值不匹配。');
+      if(crypto.createHash('sha256').update(text).digest('hex')!==key.split('/').at(-1).slice(0,-5))throw new Error('同步校验值不匹配。');
       try{await send('PUT',object,{}, {headers:{'content-type':'application/json','x-oss-forbid-overwrite':'true'},body:Buffer.from(text)});}catch(error){if(error.status!==409)throw error;const existing=await send('GET',object);if(!existing.body.equals(Buffer.from(text)))throw new Error('已有同步文件校验失败。');}return {ok:true};
     }throw new Error('不支持的同步操作。');
   }

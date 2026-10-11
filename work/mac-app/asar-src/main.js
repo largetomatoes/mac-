@@ -192,6 +192,7 @@ function deleteQuestion(data, id) {
   });
   return {
     ...data,
+    cards: data.cards.map(card=>{if(!ids.has(card.questionId))return card;const {questionId,...original}=card;return original;}),
     notes: data.notes.filter((note) => !ids.has(note.id)), readingNotes, bookThoughts: data.bookThoughts.map((entry) => ({ ...entry, questionIds: entry.questionIds.filter((questionId) => !ids.has(questionId)) })), crossThoughts,
     thoughtReplies: (data.thoughtReplies || []).filter((reply) => !thoughtIds.has(reply.thoughtId)),
     manuscripts: (data.manuscripts || []).map((manuscript) => ({ ...manuscript, links: (manuscript.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)), ...(manuscript.blocks ? { blocks: manuscript.blocks.map((block) => ({ ...block, links: (block.links || []).filter((link) => link.targetKind === 'reading' || !ids.has(link.questionId)) })) } : {}) })),
@@ -592,7 +593,7 @@ async function storedSyncConnection() {
 async function syncIdentity(){
   const connection=await storedSyncConnection(),oss=await storedCloudConfig();
   const target=connection.provider==='nutstore'?(connection.username?nutstoreTarget(connection):''):(oss?cloudTarget(oss):'');
-  return {provider:connection.provider,configured:connection.provider==='nutstore'?!!connection.passwordCiphertext:!!oss,
+  return {protocol:2,deviceName:process.platform==='darwin'?'Mac':process.platform==='win32'?'Windows':'电脑',provider:connection.provider,configured:connection.provider==='nutstore'?!!connection.passwordCiphertext:!!oss,
     target,verified:!!target&&connection.checkedTarget===target,checkedAt:connection.checkedAt,remoteHasData:!!connection.remoteHasData,
     username:connection.username||'',directory:'问间资料库',legacyFolder:storageMode==='nutstore'?storageDir:null};
 }
@@ -702,6 +703,10 @@ async function handleDeviceSync(request,response,url) {
     if(route==='open-folder'){if(storageMode!=='nutstore')throw new Error('没有连接坚果云本机目录。');const error=await shell.openPath(storageDir);if(error)throw new Error(error);return jsonReply(response,200,{ok:true});}
     if(route==='backup-list')return jsonReply(response,200,{backups:await listNutstoreBackups(input)});
     if(route==='backup-restore')return jsonReply(response,200,await restoreNutstoreBackup(input));
+    if(route==='backup-local')return await serializeNotebook(async()=>{
+      await draftQueue;const backupDir=path.join(app.getPath('userData'),'restore-safeguards');await fsp.mkdir(backupDir,{recursive:true});const backupPath=path.join(backupDir,'同步整理前-'+Date.now()+'-'+crypto.randomUUID()+'.wenjian-backup');
+      await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination:backupPath,validateNotebook:v=>Number.isInteger(v.version)&&validNotebookData(v.data)});return jsonReply(response,200,{backupPath});
+    });
     if(route==='commit')return await serializeNotebook(async()=>{
       if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份'});
       const current=await readStore();if(input.version!==current.version||(input.syncRevision||0)!==(current.syncRevision||0))return jsonReply(response,409,{error:'本机刚保存新内容，正在重新合并。'});

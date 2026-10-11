@@ -1,3 +1,4 @@
+import {prepareDesktopSync,withCloudLease,readManifest} from './protocol';
 import {capture,materialize,newSyncState,project,resolveConflict,stable,unionOperations,type Operation,type SyncState} from './core';
 import type {Notebook} from '../notebook';
 export type Envelope={version:number;data:Notebook;sync?:SyncState;syncRevision?:number};
@@ -16,23 +17,30 @@ export async function updateSync(change:(state:SyncState)=>SyncState):Promise<En
  throw Error('本机正在连续保存，请稍后重试。');
 }
 let running:Promise<Envelope>|null=null;
-export function syncNow(onProgress?:(progress:SyncProgress)=>void):Promise<Envelope>{if(running)return running;running=run(onProgress).finally(()=>{running=null;});return running;}
-async function run(progress?:(progress:SyncProgress)=>void):Promise<Envelope>{
- const config=await syncApi<{target:string;configured:boolean;verified?:boolean}>('identity');
+export function syncNow(onProgress?:(progress:SyncProgress)=>void,mode?:'join'|'merge',rootId?:string):Promise<Envelope>{if(running)return running;running=run(onProgress,mode,rootId).finally(()=>{running=null;});return running;}
+async function run(progress?: (progress:SyncProgress)=>void,mode?:'join'|'merge',rootId?:string):Promise<Envelope>{
+ const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number}>('identity');
+ if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
+ if(config.protocol===2)return withCloudLease(config.target,async renew=>{const prepared=await prepareDesktopSync(config.target,mode,renew,rootId);return runJournal(progress,prepared.manifest.epoch,renew);});
+ return runJournal(progress);
+}
+async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy',renew?:()=>Promise<void>):Promise<Envelope>{
+ const config=await syncApi<{target:string;configured:boolean;verified?:boolean;deviceName?:string;protocol?:number}>('identity');
  let snapshot=await syncApi<Envelope>('local'),state=snapshot.sync||newSyncState();
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
  if(state.target&&state.target!==config.target)throw Error('连接的资料库已改变，请在连接设置中处理。');
- state=capture({...state,target:config.target},snapshot.data);
+ const protocol=config.protocol===2?await readManifest(config.target):null;
+ state=capture({...state,...(protocol?.manifest?{libraryId:protocol.manifest.libraryId,epoch}:{}),target:config.target,...(config.deviceName?{deviceName:config.deviceName}:{})},snapshot.data);
  // Keep the queue durable before network access. The binding remains provisional
  // until a PUT is acknowledged or remote records are successfully incorporated.
  snapshot=await syncApi<Envelope>('commit',{version:snapshot.version,syncRevision:snapshot.syncRevision||0,data:snapshot.data,sync:state});
  progress?.({stage:'notes',message:'正在读取云端笔记…'});
- const listing=await syncApi<{keys:string[]}>('remote',{action:'list',target:config.target});
+ const listing=await syncApi<{keys:string[]}>('remote',{action:'list',target:config.target,epoch});
  const received=new Set(state.received),remote:Operation[]=[];
  for(const key of listing.keys){
   if(received.has(key))continue;
   const result=await syncApi<{text:string}>('remote',{action:'get',target:config.target,key});
-  const match=/^changes\/([a-f0-9]{64})\.json$/.exec(key);if(!match)throw Error('同步文件名不正确。');
+  const match=/^(?:changes|epochs\/[-a-zA-Z0-9_]{8,100}\/changes)\/([a-f0-9]{64})\.json$/.exec(key);if(!match)throw Error('同步文件名不正确。');
   if(await sha256(result.text)!==match[1])throw Error('同步文件校验失败，未修改本机资料。');
   const batch=JSON.parse(result.text);if(batch.schema!==1||!Array.isArray(batch.operations))throw Error('同步格式暂不支持。');
   remote.push(...batch.operations);received.add(key);
@@ -42,7 +50,8 @@ async function run(progress?:(progress:SyncProgress)=>void):Promise<Envelope>{
  const batches=operationBatches(state.pending);
  for(const [index,batch] of batches.entries()){
   progress?.({stage:'notes',message:'正在上传笔记…',completed:index,total:batches.length});
-  const content=stable({schema:1,operations:batch}),key=`changes/${await sha256(content)}.json`;
+  await renew?.();
+  const content=stable({schema:1,operations:batch}),key=`${epoch==='legacy'?'changes':'epochs/'+epoch+'/changes'}/${await sha256(content)}.json`;
   await syncApi('remote',{action:'put',target:config.target,key,text:content});
   // Even if a later request fails, remember this acknowledgement. A partially
   // uploaded library must never be treated as an unused, freely replaceable account.
@@ -52,7 +61,7 @@ async function run(progress?:(progress:SyncProgress)=>void):Promise<Envelope>{
  for(let attempt=0;attempt<5;attempt++){
   const current=await syncApi<Envelope>('local');if(current.sync?.target!==config.target)throw Error('同步连接已变化。');
   let next=capture(current.sync,current.data);
-  next={...next,operations:unionOperations(next.operations,remote),pending:next.pending.filter(op=>!state.pending.some(sent=>sent.id===op.id)),received:[...new Set([...next.received,...received])],lastSync:new Date().toISOString()};
+  next={...next,epoch,operations:unionOperations(next.operations,remote),pending:next.pending.filter(op=>!state.pending.some(sent=>sent.id===op.id)),received:[...new Set([...next.received,...received])],lastSync:new Date().toISOString()};
   const merged=materialize(next,current.data);next.observed=project(merged.data);
   try{const result=await syncApi<Envelope>('commit',{version:current.version,syncRevision:current.syncRevision||0,data:merged.data,sync:next});window.dispatchEvent(new CustomEvent('wenjian-sync-updated',{detail:result}));return result;}
   catch(error){if((error as {status?:number}).status!==409||attempt===4)throw error;}

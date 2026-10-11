@@ -7,6 +7,7 @@ export type GraphData=Pick<Notebook,'notes'|'cards'|'crossThoughts'|'links'>;
 /** Thoughts refer back to their owning board; the notebook itself stays untouched. */
 export function graphOwners(data:GraphData):Map<string,string>{
  const owners=new Map<string,string>();
+ for(const card of data.cards)if(card.questionId&&data.notes.some(n=>n.id===card.questionId))owners.set(card.id,card.questionId);
  for(const item of [...data.notes,...data.cards,...data.crossThoughts])
   for(const thought of item.thoughts||[])owners.set(thought.id,item.id);
  return owners;
@@ -15,7 +16,7 @@ export function graphOwners(data:GraphData):Map<string,string>{
 /** Every structural board is visible. Unconnected cards stay in the card collection. */
 export function projectGraph(data:GraphData):GraphProjection{
  const owners=graphOwners(data),owner=(id:string)=>owners.get(id)||id;
- const cardIds=new Set(data.cards.map(card=>card.id));
+ const cardIds=new Set(data.cards.filter(card=>!owners.has(card.id)).map(card=>card.id));
  const connectedCards=new Set([...data.links.flatMap(link=>[link.from,link.to]),...data.crossThoughts.flatMap(cross=>cross.anchorIds)].map(owner).filter(id=>cardIds.has(id)));
  const graphIds=new Set([...data.notes.map(note=>note.id),...data.crossThoughts.map(cross=>cross.id),...connectedCards]);
  const edges:GraphEdge[]=[

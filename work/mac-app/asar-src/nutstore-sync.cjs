@@ -82,7 +82,30 @@ function createNutstoreClient(input, options={}) {
   async function mkdir(folder){if(ensured.has(folder))return;const response=await request('MKCOL',folder);if(response.statusCode!==405)success(response);ensured.add(folder);}
   async function ensure(key){for(const folder of ['/dav/问间资料库/',ROOT,ROOT+'changes/',ROOT+'books/'])await mkdir(folder);if(key?.startsWith('changes/'))await mkdir(ROOT+'changes/'+key[8]+'/');}
   async function listing(folder){const r=await request('PROPFIND',folder,{headers:{Depth:'1','content-type':'application/xml'},body:Buffer.from('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>')});if(r.statusCode===404)return [];success(r);return children(r.body.toString('utf8'),folder);}
-  async function syncRemote({action,key,text}) {
+  async function syncRemote({action,key,text,etag,epoch}={}) {
+    const validEpoch=epoch&&/^[a-zA-Z0-9_-]{8,100}$/.test(epoch)?epoch:null;
+    if(epoch&&epoch!=='legacy'&&!validEpoch)throw new Error('同步世代无效。');
+    if(action==='control-get'||action==='control-put'){
+      if(!['library.json','lease.json'].includes(key))throw new Error('同步控制文件无效。');
+      if(action==='control-get'){const r=await request('GET',ROOT+key);if(r.statusCode===404)return {text:null,etag:null};success(r);return {text:r.body.toString('utf8'),etag:r.headers.etag||null};}
+      if(typeof text!=='string'||Buffer.byteLength(text)>65536)throw new Error('同步控制内容无效。');await ensure();
+      const r=await request('PUT',ROOT+key,{headers:{'content-type':'application/json',...(etag?{'If-Match':etag}:{'If-None-Match':'*'})},body:Buffer.from(text)});success(r);return {ok:true};
+    }
+    if(action==='guard'){await ensure();success(await request('PUT',ROOT+'changes/upgrade-required.json',{body:Buffer.from('{"minimumVersion":"2.4.0"}')}));return {ok:true};}
+    if(action==='delete'){
+      if(!/^(changes\/[a-f0-9]{64}\.json|epochs\/[a-zA-Z0-9_-]{8,100}\/changes\/[a-f0-9]{64}\.json|snapshots\/[a-f0-9]{64}\.json)$/.test(key||''))throw new Error('只能清理旧同步批次。');const r=await request('DELETE',key.startsWith('changes/')?objectPath(key):ROOT+key.split('/').map((part,index,parts)=>index===parts.length-1&&key.startsWith('epochs/')?part[0]+'/'+part:part).join('/'));if(r.statusCode!==404)success(r);return {ok:true};
+    }
+    if(key?.startsWith('snapshots/')||key?.startsWith('epochs/')){
+      if(!/^(snapshots\/[a-f0-9]{64}\.json|epochs\/[a-zA-Z0-9_-]{8,100}\/changes\/[a-f0-9]{64}\.json)$/.test(key))throw new Error('同步文件无效。');
+      const parts=key.split('/');const name=parts.pop();if(key.startsWith('epochs/'))parts.push(name[0]);const folder=ROOT+parts.join('/')+'/';await ensure();let parent=ROOT;for(const part of parts){parent+=part+'/';await mkdir(parent);}
+      if(action==='get')return {text:success(await request('GET',folder+name)).body.toString('utf8')};
+      if(action!=='put'||typeof text!=='string'||Buffer.byteLength(text)>16*1024*1024||sha(text)!==name.slice(0,-5))throw new Error('同步内容校验失败。');
+      const r=await request('PUT',folder+name,{headers:{'If-None-Match':'*'},body:Buffer.from(text)});if(r.statusCode===412){if(!success(await request('GET',folder+name)).body.equals(Buffer.from(text)))throw new Error('云端已有文件不一致。');}else success(r);return {ok:true};
+    }
+    if(action==='list'&&epoch&&epoch!=='legacy'){
+      const keys=[];for(const dir of await listing(ROOT+'epochs/'+epoch+'/changes/')){if(!/^[a-f0-9]\/$/.test(dir))throw new Error('同步目录包含无效文件。');for(const name of await listing(ROOT+'epochs/'+epoch+'/changes/'+dir)){if(!new RegExp('^'+dir[0]+'[a-f0-9]{63}\\.json$').test(name))throw new Error('同步文件无效。');keys.push('epochs/'+epoch+'/changes/'+name);}}return {keys};
+    }
+
     if(action==='check'){
       await ensure();
       const probe=Buffer.from('{"schema":1,"purpose":"wenjian-connection-check"}'),pathname=ROOT+'connection-check.json';
@@ -91,7 +114,7 @@ function createNutstoreClient(input, options={}) {
       if(!success(await request('GET',pathname)).body.equals(probe))throw new Error('连接检查文件不一致，请检查云端问间目录。');
       return {ok:true,...await syncRemote({action:'list'})};
     }
-    if(action==='list'){const keys=[];for(const dir of await listing(ROOT+'changes/')){if(!/^[a-f0-9]\/$/.test(dir))throw new Error('坚果云同步目录含未知项目（'+dir.slice(0,80)+'），未合并。');for(const name of await listing(ROOT+'changes/'+dir)){if(!new RegExp('^'+dir[0]+'[a-f0-9]{63}\\.json$').test(name))throw new Error('坚果云同步文件名不正确。');keys.push('changes/'+name);}}return {keys};}
+    if(action==='list'){const keys=[];for(const dir of await listing(ROOT+'changes/')){if(dir==='upgrade-required.json')continue;if(!/^[a-f0-9]\/$/.test(dir))throw new Error('坚果云同步目录含未知项目（'+dir.slice(0,80)+'），未合并。');for(const name of await listing(ROOT+'changes/'+dir)){if(!new RegExp('^'+dir[0]+'[a-f0-9]{63}\\.json$').test(name))throw new Error('坚果云同步文件名不正确。');keys.push('changes/'+name);}}return {keys};}
     const pathname=objectPath(key);if(!key.startsWith('changes/'))throw new Error('请使用书籍接口。');
     if(action==='get'){const body=success(await request('GET',pathname)).body;return {text:body.toString('utf8')};}
     if(action!=='put'||typeof text!=='string'||Buffer.byteLength(text)>16*1024*1024||key!=='changes/'+sha(text)+'.json')throw new Error('同步文件校验不正确。');

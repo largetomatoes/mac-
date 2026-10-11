@@ -1,10 +1,11 @@
 import type {Notebook} from '../notebook';
 export type SyncValue = unknown;
-export type Operation = {id:string;key:string;parents:string[];value:SyncValue;at:string;device:string};
-export type SyncState = {schema:1;device:string;enabled:boolean;target:string;operations:Operation[];pending:Operation[];received:string[];observed:Record<string,SyncValue>;lastSync?:string;published?:string[];books?:{errors:Record<string,string>;lastChecked?:string}};
+export type Operation = {id:string;key:string;parents:string[];value:SyncValue;at:string;device:string;deviceName?:string};
+export type SyncState = {schema:1;device:string;deviceName?:string;libraryId?:string;epoch?:string;enabled:boolean;target:string;operations:Operation[];pending:Operation[];received:string[];observed:Record<string,SyncValue>;lastSync?:string;published?:string[];books?:{errors:Record<string,string>;lastChecked?:string}};
 export type Conflict = {key:string;options:Operation[]};
 const collections=['notes','links','cards','readingNotes','crossThoughts','thoughtReplies','manuscripts','libraryBooks','libraryFolders','zoteroCollections','libraryHighlights','bookThoughts','ocrCache'] as const;
-const scalars=['setupCompleted','zoteroEnabled','dismissedSuggestions'] as const;
+const scalars=['setupCompleted','dismissedSuggestions'] as const;
+const legacyScalars=[...scalars,'zoteroEnabled'] as const;
 const own=(object:object,key:string)=>Object.prototype.hasOwnProperty.call(object,key);
 export function stable(value:unknown):string {if(value===undefined)return 'null';if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(stable).join(',')+']';return '{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';}
 export function newSyncState(device=crypto.randomUUID()):SyncState{return {schema:1,device,enabled:false,target:'',operations:[],pending:[],received:[],observed:{}};}
@@ -18,7 +19,7 @@ export function validateOperation(value:unknown):value is Operation {
  if(!value||typeof value!=='object')return false;const op=value as Operation;
  if(typeof op.id!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(op.id)||typeof op.device!=='string'||op.device.length>100||typeof op.at!=='string'||!Number.isFinite(Date.parse(op.at))||typeof op.key!=='string'||op.key.length>2000||!Array.isArray(op.parents)||op.parents.some(p=>typeof p!=='string'||p===op.id)||!own(op,'value'))return false;
  const [collection,id,...extra]=op.key.split('/');if(extra.length||!id)return false;
- if(collection==='settings')return (scalars as readonly string[]).includes(id)&&(id==='dismissedSuggestions'?Array.isArray(op.value):typeof op.value==='boolean');
+ if(collection==='settings')return (legacyScalars as readonly string[]).includes(id)&&(id==='dismissedSuggestions'?Array.isArray(op.value):typeof op.value==='boolean');
  if(collection!=='readingProgress'&&!(collections as readonly string[]).includes(collection))return false;
  if(op.value===null)return !(collection==='notes'&&decodeURIComponent(id)==='world');
  if(typeof op.value!=='object'||Array.isArray(op.value))return false;
@@ -31,34 +32,69 @@ export function tips(operations:Operation[]):Map<string,Operation[]>{
  for(const op of operations)if(!retired.has(op.id)){const list=groups.get(op.key)||[];list.push(op);groups.set(op.key,list);}
  for(const list of groups.values())list.sort((a,b)=>a.id.localeCompare(b.id));return groups;
 }
-function distinct(options:Operation[]){return [...new Map(options.map(op=>[stable(op.value),op])).values()];}
+export function distinct(options:Operation[]){return [...new Map(options.map(op=>[stable(op.value),op])).values()];}
+// Only merge edits with a shared ancestor. Separate first-run libraries must be reviewed.
+function mergedValue(key:string,options:Operation[],operations:Operation[]):{ok:boolean;value:unknown}{
+ const values=distinct(options);if(values.length===1)return {ok:true,value:values[0].value};
+ if(key==='settings/zoteroEnabled')return {ok:true,value:null};
+ if(key==='settings/dismissedSuggestions')return {ok:true,value:[...new Set(values.flatMap(op=>op.value as string[]))].sort()};
+ const byId=new Map(operations.map(op=>[op.id,op]));
+ const ancestors=(op:Operation)=>{const ids=new Set<string>();const visit=(id:string)=>{if(ids.has(id))return;ids.add(id);byId.get(id)?.parents.forEach(visit);};op.parents.forEach(visit);return ids;};
+ const sets=values.map(ancestors),common=operations.filter(op=>op.key===key&&sets.every(set=>set.has(op.id)));
+ const base=tips(common).get(key);if(base?.length!==1)return {ok:false,value:null};
+ let result=structuredClone(base[0].value);
+ for(const op of values){const merge=mergeRecord(base[0].value,result,op.value);if(!merge.ok)return merge;result=merge.value;}
+ return {ok:true,value:result};
+}
+function mergeRecord(base:unknown,a:unknown,b:unknown):{ok:boolean;value:unknown}{
+ if(stable(a)===stable(b))return {ok:true,value:a};if(stable(a)===stable(base))return {ok:true,value:b};if(stable(b)===stable(base))return {ok:true,value:a};
+ if(!base||!a||!b||typeof base!=='object'||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)||Array.isArray(b))return {ok:false,value:null};
+ const before=base as Record<string,unknown>,left=a as Record<string,unknown>,right=b as Record<string,unknown>,out:Record<string,unknown>={};
+ for(const field of new Set([...Object.keys(before),...Object.keys(left),...Object.keys(right)])){
+  let merged: {ok:boolean;value:unknown};
+  if(['thoughts','revisions','anchorRevisions'].includes(field)&&Array.isArray(left[field])&&Array.isArray(right[field])){
+   const old=(before[field]||[]) as Record<string,unknown>[],aa=left[field] as Record<string,unknown>[],bb=right[field] as Record<string,unknown>[];
+   const identity=(item:Record<string,unknown>)=>typeof item.id==='string'?item.id:stable(item);
+   const bm=new Map(old.map(item=>[identity(item),item])),am=new Map(aa.map(item=>[identity(item),item])),cm=new Map(bb.map(item=>[identity(item),item]));const items:unknown[]=[];
+   for(const id of new Set([...bm.keys(),...am.keys(),...cm.keys()])){const item=mergeRecord(bm.get(id)??null,am.get(id)??null,cm.get(id)??null);if(!item.ok)return item;if(item.value!==null)items.push(item.value);}
+   items.sort((x,y)=>String((x as {at?:string}).at||'').localeCompare(String((y as {at?:string}).at||''))||stable(x).localeCompare(stable(y)));merged={ok:true,value:items};
+  }else merged=mergeRecord(before[field],left[field],right[field]);
+  if(!merged.ok)return merged;if(merged.value!==undefined)out[field]=merged.value;
+ }
+ return {ok:true,value:out};
+}
 export function capture(state:SyncState,data:Notebook,id=()=>crypto.randomUUID(),at=new Date().toISOString()):SyncState{
  const next=project(data),heads=tips(state.operations),created:Operation[]=[];
  for(const key of new Set([...Object.keys(state.observed),...Object.keys(next)])){
+  if(key==='settings/zoteroEnabled')continue;
   const before=state.observed[key]??null,after=next[key]??null;if(stable(before)===stable(after))continue;
   const options=heads.get(key)||[];
-  if(!key.startsWith('readingProgress/')&&!key.startsWith('ocrCache/')&&distinct(options).length>1)throw Error('这条记录有不同设备的版本，请先在同步窗口选择要保留的版本。');
-  created.push({id:id(),key,parents:options.map(op=>op.id),value:after,at,device:state.device});
+  if(!key.startsWith('readingProgress/')&&!key.startsWith('ocrCache/')&&options.length&&!mergedValue(key,options,state.operations).ok)throw Error('这条记录有不同设备的版本，请先在同步窗口选择要保留的版本。');
+  created.push({id:id(),key,parents:options.map(op=>op.id),value:after,at,device:state.device,...(state.deviceName?{deviceName:state.deviceName}:{})});
  }
  return {...state,observed:next,operations:unionOperations(state.operations,created),pending:unionOperations(state.pending,created)};
 }
 export function materialize(state:SyncState,local:Notebook):{data:Notebook;conflicts:Conflict[]}{
  validateGraph(state.operations);
- const data=structuredClone(local),conflicts:Conflict[]=[];const heads=tips(state.operations);
+ const data=structuredClone(local),conflicts:Conflict[]=[],heads=tips(state.operations),localValues=project(local);
  if(!heads.size)return {data,conflicts};
  for(const collection of collections)(data as unknown as Record<string,unknown>)[collection]=[];
- for(const [key,options] of heads){const distinctOptions=distinct(options);if(!key.startsWith('readingProgress/')&&!key.startsWith('ocrCache/')&&distinctOptions.length>1)conflicts.push({key,options:distinctOptions});
-  // Keep a live value visible during delete/edit conflicts. Every alternative remains in the journal.
-  const winner=key.startsWith('ocrCache/')?[...options].sort((a,b)=>Number((b.value as {version?:number})?.version||0)-Number((a.value as {version?:number})?.version||0)||b.at.localeCompare(a.at)||b.id.localeCompare(a.id))[0]:key.startsWith('readingProgress/')?[...options].sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id))[0]:options.find(op=>op.value!==null)||options[0];if(winner.value===null)continue;
-  const [collection,id]=key.split('/');if(collection==='settings')(data as unknown as Record<string,unknown>)[id]=structuredClone(winner.value);
-  else if(collection!=='readingProgress')((data as unknown as Record<string,unknown[]>)[collection]).push(structuredClone(winner.value));
+ for(const [key,options] of heads){
+  if(key==='settings/zoteroEnabled')continue;
+  const merge=mergedValue(key,options,state.operations),automatic=key.startsWith('readingProgress/')||key.startsWith('ocrCache/');
+  if(!automatic&&!merge.ok)conflicts.push({key,options:distinct(options)});
+  const newest=[...options].sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
+  const winner=key.startsWith('ocrCache/')?[...newest].sort((a,b)=>Number((b.value as {version?:number})?.version||0)-Number((a.value as {version?:number})?.version||0))[0]:automatic?newest[0]:options.find(op=>op.device===state.device&&stable(op.value)===stable(localValues[key]))||options.find(op=>stable(op.value)===stable(localValues[key]))||newest.find(op=>op.value!==null)||newest[0];
+  const value=!automatic&&merge.ok?merge.value:winner.value;if(value===null)continue;
+  const [collection,id]=key.split('/');if(collection==='settings')(data as unknown as Record<string,unknown>)[id]=structuredClone(value);
+  else if(collection!=='readingProgress')((data as unknown as Record<string,unknown[]>)[collection]).push(structuredClone(value));
  }
+ // Preserve existing order. Newly received records use an explicit stable tie breaker.
+ for(const collection of collections){const order=new Map((local[collection]||[]).map((v,i)=>[(v as {id?:string}).id,i]));(data[collection] as unknown as {id?:string;at?:string}[]).sort((a,b)=>(order.get(a.id)??Infinity)-(order.get(b.id)??Infinity)||String(a.at||'').localeCompare(String(b.at||''))||String(a.id||'').localeCompare(String(b.id||'')));}
  for(const book of data.libraryBooks){const progress=heads.get('readingProgress/'+encodeURIComponent(book.id));book.progress=progress?.length?structuredClone((([...progress].sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id))[0].value as {progress?:typeof book.progress})?.progress)||{}):{};}
  if(!data.notes.some(n=>n.id==='world'&&!n.parent))throw Error('同步资料缺少核心问题，未修改本机资料。');
- // Detect deleted parents instead of silently hiding children from the problem tree.
  const ids=new Set([...data.notes.map(n=>n.id),...data.crossThoughts.map(n=>n.id)]);
- const orphan=data.notes.find(n=>n.parent&&!ids.has(n.parent));
- if(orphan)throw Error('某个问题在一端被删除、另一端添加了子问题。请先恢复该父问题，再同步。');
+ if(data.notes.some(n=>n.parent&&!ids.has(n.parent)))throw Error('某个问题在一端被删除、另一端添加了子问题。请先恢复该父问题，再同步。');
  return {data,conflicts};
 }
 export function resolveConflict(state:SyncState,key:string,chosenId:string,id=crypto.randomUUID()):SyncState{

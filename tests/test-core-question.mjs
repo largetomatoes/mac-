@@ -14,7 +14,7 @@ const model=load('lib/notebook.ts',{'./library-folders':load('lib/library-folder
 const deletion=load('lib/deletion.ts',{'./notebook':model});
 const copy=v=>JSON.parse(JSON.stringify(v));
 const same=(a,b)=>assert.deepEqual(copy(a),copy(b));
-const {readOnlyHtml}=load('lib/read-only-export.ts',{'./notebook':model});
+const {readOnlyHtml}=load('lib/read-only-export.ts',{'./notebook':model,'./book-notebook':load('lib/book-notebook.ts')});
 const fresh=copy(model.initialNotebook);
 same(fresh,JSON.parse(fs.readFileSync('work/mac-app/seed.json','utf8')).data);
 assert.equal(fresh.setupCompleted,false);assert.equal(fresh.zoteroEnabled,false);
