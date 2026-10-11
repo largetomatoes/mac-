@@ -1,6 +1,6 @@
 {
   "name": "wenjian-mac",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "private": true,
   "description": "问间桌面客户端",
   "main": "main.js",
