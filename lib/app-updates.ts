@@ -1,6 +1,6 @@
 export const RELEASES_API='https://api.github.com/repos/largetomatoes/mac-/releases?per_page=30';
 export const RELEASES_PAGE='https://github.com/largetomatoes/mac-/releases';
-export const PREVIEW_VERSION='2.4.3';
+export const PREVIEW_VERSION='2.4.2';
 export type AppInfo={version:string;build:string;platform:'android'|'darwin'|'win32';arch:string};
 export type Release={tag_name:string;html_url:string;body?:string;published_at?:string;draft?:boolean;prerelease?:boolean;assets?:{name:string;browser_download_url:string;state?:string}[]};
 export type UpdateResult={state:'available'|'current'|'ahead'|'missing'|'empty';version?:string;release?:Release;download?:string};

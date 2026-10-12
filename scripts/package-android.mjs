@@ -18,12 +18,15 @@ const apk=path.join(destination,`Wenjian-${metadata.elements[0].versionName}-And
 const env={...process.env,JAVA_HOME:javaHome,PATH:path.join(javaHome,'bin')+path.delimiter+process.env.PATH};
 const run=(binary,args)=>execFileSync(path.join(sdk,'build-tools/36.0.0',binary),args,{env,encoding:'utf8'});
 run('zipalign',['-f','-P','16','4',source,aligned]);
-run('apksigner',['sign','--ks',keystore,'--ks-key-alias',alias,'--ks-pass','file:'+password,'--out',apk,aligned]);
-const certificate=run('apksigner',['verify','--verbose','--print-certs',apk]);
+run('apksigner',['sign','--ks',keystore,'--ks-key-alias',alias,'--ks-pass','file:'+password,'--v1-signer-name','CERT','--v1-signing-enabled','true','--v2-signing-enabled','true','--v3-signing-enabled','true','--v4-signing-enabled','false','--out',apk,aligned]);
+const certificate=run('apksigner',['verify','--verbose','--print-certs','--min-sdk-version','23',apk]);
+for(const scheme of ['v1 scheme (JAR signing)','v2 scheme (APK Signature Scheme v2)','v3 scheme (APK Signature Scheme v3)'])if(!certificate.includes('Verified using '+scheme+': true'))throw Error('缺少有效的 '+scheme+' 签名');
+run('apksigner',['verify',apk]);
 run('zipalign',['-c','-P','16','4',apk]);
 const badging=run('aapt',['dump','badging',apk]);
 if(!badging.includes("package: name='com.wenjian.reader'")||badging.includes('application-debuggable'))throw Error('安装包身份或发布模式不正确');
 const files=execFileSync('/usr/bin/unzip',['-Z1',apk],{encoding:'utf8'}).trim().split('\n');
+for(const signature of ['META-INF/CERT.SF','META-INF/CERT.RSA','META-INF/MANIFEST.MF'])if(!files.includes(signature))throw Error('缺少标准签名文件：'+signature);
 const unexpected=files.filter(name=>/\.(pdf|epub|jks|keystore|wenjian-backup)$/i.test(name)||/(reader-store|oss-secure|sync-connection-secure|store-password|notebook\.json)/i.test(name));
 if(unexpected.length)throw Error('安装包含不应发布的资料：'+unexpected.join(', '));
 for(const asset of ['assets/public/reader/pdf/pdf.worker.min.mjs','assets/public/reader/ocr/chi_sim.traineddata','assets/public/reader/ocr/eng.traineddata','assets/public/unsupported-webview.html'])if(!files.includes(asset))throw Error('缺少离线资源：'+asset);
