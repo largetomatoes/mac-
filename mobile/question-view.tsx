@@ -1,3 +1,5 @@
+import {MobileQuestionEditor} from './question-editor';
+import {cardQuestion} from '../lib/card-collection';
 import { useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Network, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../components/ui/dialog';
@@ -48,10 +50,11 @@ export function MobileQuestions({ data, selected, onSelect, saving, save, onOpen
           const reply = data.thoughtReplies.find(item => item.thoughtId === thought.id);
           return <article key={thought.id}><small>{new Date(thought.at).toLocaleString('zh-CN')} · {thought.origin}</small><p>{thought.text}</p>{thought.reason && <aside>修改原因：{thought.reason}</aside>}{reply && <aside><small>我的回答 · {new Date(reply.at).toLocaleString('zh-CN')}</small><p>{reply.text}</p></aside>}</article>;
         })}{!item?.thoughts?.length && <p className="mobile-muted">暂无后续思考</p>}</section>
+        {selected&&<MobileQuestionEditor key={selected} data={data} id={selected} saving={saving} save={save}/>}
         {!!note?.revisions.length && <details className="mobile-revisions"><summary>修改记录 · {note.revisions.length}</summary>{note.revisions.map((revision, index) => <article key={index}><small>{new Date(revision.at).toLocaleString('zh-CN')}</small><h4>{revision.title}</h4><p>{revision.body}</p><aside>{revision.reason}</aside></article>)}</details>}
         {!!cross?.anchorRevisions.length && <details className="mobile-revisions"><summary>连接修改记录 · {cross.anchorRevisions.length}</summary>{cross.anchorRevisions.map((revision, index) => <article key={index}><small>{new Date(revision.at).toLocaleString('zh-CN')}</small><p>{revision.fromLabel || revision.from.map(id => boardLabel(data, id)).join(' ↔ ')} → {revision.toLabel || revision.to.map(id => boardLabel(data, id)).join(' ↔ ')}</p><aside>{revision.reason}</aside></article>)}</details>}
       </div>
     </DialogContent></Dialog>
-    <Dialog open={cardsOpen} onOpenChange={setCardsOpen}><DialogContent className="mobile-card-dialog"><DialogTitle>卡片集</DialogTitle><DialogDescription>原话与后来想到的分别保留。</DialogDescription><div>{data.cards.map(card => <button type="button" className="mobile-board-row" key={card.id} onClick={() => { setCardsOpen(false); onSelect(card.id); }}><strong>{card.text}</strong><ArrowUpRight size={16}/></button>)}{!data.cards.length && <p>暂无卡片</p>}</div></DialogContent></Dialog>
+    <Dialog open={cardsOpen} onOpenChange={setCardsOpen}><DialogContent className="mobile-card-dialog"><DialogTitle>卡片集</DialogTitle><DialogDescription>原话与后来想到的分别保留。</DialogDescription><div>{data.cards.map(card => <button type="button" className="mobile-board-row" key={card.id} onClick={() => { setCardsOpen(false); onSelect(cardQuestion(card,data)?.id||card.id); }}><strong>{card.text}</strong><ArrowUpRight size={16}/></button>)}{!data.cards.length && <p>暂无卡片</p>}</div></DialogContent></Dialog>
   </section>;
 }

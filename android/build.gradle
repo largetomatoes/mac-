@@ -27,3 +27,12 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+// Use the installed release toolchain for every Capacitor Android module.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android.buildToolsVersion = '36.0.0'
+        }
+    }
+}

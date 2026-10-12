@@ -29,8 +29,10 @@ final class NutstoreClient {
         return new JSONObject().put("username",username).put("password",password);
     }
     private static String object(String key)throws Exception {
-        if(key==null||!key.matches("(changes/[a-f0-9]{64}\\.json|books/[a-f0-9]{64}\\.(pdf|epub))"))throw new IOException("同步文件名无效");
-        return ROOT+(key.startsWith("changes/")?"changes/"+key.charAt(8)+"/"+key.substring(8):key);
+        if(key==null||!key.matches("(changes/[a-f0-9]{64}\\.json|books/[a-f0-9]{64}\\.(pdf|epub)|snapshots/[a-f0-9]{64}\\.json|epochs/[a-zA-Z0-9_-]{8,100}/changes/[a-f0-9]{64}\\.json)"))throw new IOException("同步文件名无效");
+        if(key.startsWith("changes/"))return ROOT+"changes/"+key.charAt(8)+"/"+key.substring(8);
+        if(key.startsWith("epochs/")){int slash=key.lastIndexOf('/');return ROOT+key.substring(0,slash+1)+key.charAt(slash+1)+"/"+key.substring(slash+1);}
+        return ROOT+key;
     }
     private Response request(String method,String path,RequestBody body,String...headers)throws Exception {
         HttpUrl.Builder url=new HttpUrl.Builder().scheme("https").host("dav.jianguoyun.com");
@@ -39,14 +41,14 @@ final class NutstoreClient {
         for(int i=0;i<headers.length;i+=2)request.header(headers[i],headers[i+1]);return http.newCall(request.build()).execute();
     }
     private static void success(Response response)throws IOException {
-        if(response.isSuccessful())return;int code=response.code();throw new IOException(code==401?"坚果云身份验证失败（401），请检查账号邮箱和第三方应用密码":code==403?"坚果云拒绝访问（403），请检查应用授权或目录权限；这不一定是密码错误":code==429?"坚果云请求过于频繁，请稍后重试":code==507?"坚果云空间或流量不足":"坚果云请求失败（"+code+"）");
+        if(response.isSuccessful())return;int code=response.code();throw new IOException(code==401?"坚果云身份验证失败（401），请检查账号邮箱和第三方应用密码":code==403?"坚果云拒绝访问（403），请检查应用授权或目录权限；这不一定是密码错误":code==412?"同步资料已被另一设备修改，请重试":code==503?"坚果云暂时不可用（503），请稍后重试":code==429?"坚果云请求过于频繁（429），请稍后重试":code==507?"坚果云空间或流量不足":"坚果云请求失败（"+code+"）");
     }
     private static byte[] read(InputStream stream,long max)throws Exception {
         try(InputStream in=stream;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[65536];long total=0;int n;while((n=in.read(buffer))!=-1){total+=n;if(total>max)throw new IOException("同步响应过大");out.write(buffer,0,n);}return out.toByteArray();}
     }
     private void ensure(String key)throws Exception {
         List<String> paths=new ArrayList<>(Arrays.asList("/dav/问间资料库/",ROOT,ROOT+"changes/",ROOT+"books/"));
-        if(key!=null&&key.startsWith("changes/"))paths.add(ROOT+"changes/"+key.charAt(8)+"/");
+        if(key!=null){String parent=object(key);parent=parent.substring(0,parent.lastIndexOf('/')+1);String current=ROOT;for(String part:parent.substring(ROOT.length()).split("/")){if(!part.isEmpty()){current+=part+"/";paths.add(current);}}}
         for(String path:paths){if(ensured.contains(path))continue;try(Response r=request("MKCOL",path,null)){if(r.code()!=405)success(r);}ensured.add(path);}
     }
     private static String decodeXml(String value) {
@@ -73,18 +75,32 @@ String child=path.substring(folder.length());if(Pattern.compile("<(?:[\\w-]+:)?c
         try(Response response=request("PROPFIND",folder,RequestBody.create(xml,MediaType.get("application/xml")),"Depth","1")){if(response.code()==404)return Collections.emptyList();success(response);return children(new String(read(response.body().byteStream(),16L*1024*1024),StandardCharsets.UTF_8),folder);}
     }
     JSONObject remote(JSONObject input)throws Exception {
-        String action=input.optString("action");
-        if("check".equals(action)){
+        String action=input.optString("action"),epoch=input.optString("epoch","legacy");
+        if(!epoch.equals("legacy")&&!epoch.matches("[a-zA-Z0-9_-]{8,100}"))throw new IOException("同步世代无效");
+        if(action.equals("control-get")||action.equals("control-put")){
+            String key=input.optString("key");if(!key.equals("library.json")&&!key.equals("lease.json"))throw new IOException("同步控制文件无效");
+            if(action.equals("control-get")){try(Response r=request("GET",ROOT+key,null)){if(r.code()==404)return new JSONObject().put("text",JSONObject.NULL).put("etag",JSONObject.NULL);success(r);return new JSONObject().put("text",new String(read(r.body().byteStream(),65536),StandardCharsets.UTF_8)).put("etag",r.header("ETag")==null?JSONObject.NULL:r.header("ETag"));}}
+            byte[] body=input.getString("text").getBytes(StandardCharsets.UTF_8);if(body.length>65536)throw new IOException("同步控制内容过大");ensure(null);String etag=input.optString("etag","");if(etag.equals("null"))etag="";
+            try(Response r=request("PUT",ROOT+key,RequestBody.create(body,MediaType.get("application/json")),etag.isEmpty()?"If-None-Match":"If-Match",etag.isEmpty()?"*":etag)){success(r);}return new JSONObject().put("ok",true);
+        }
+        if(action.equals("check")){
             ensure(null);byte[] probe="{\"schema\":1,\"purpose\":\"wenjian-connection-check\"}".getBytes(StandardCharsets.UTF_8);String path=ROOT+"connection-check.json";
             try(Response put=request("PUT",path,RequestBody.create(probe,MediaType.get("application/json")),"If-None-Match","*")){if(put.code()!=412)success(put);}
             try(Response get=request("GET",path,null)){success(get);if(!Arrays.equals(probe,read(get.body().byteStream(),65536)))throw new IOException("连接检查文件不一致");}
-            return remote(new JSONObject().put("action","list")).put("ok",true);
+            JSONObject manifest=remote(new JSONObject().put("action","control-get").put("key","library.json"));
+            return remote(new JSONObject().put("action","list")).put("ok",true).put("remoteHasData",!manifest.isNull("text"));
         }
-        if("list".equals(action)){JSONArray keys=new JSONArray();for(String dir:listing(ROOT+"changes/")){if(!dir.matches("[a-f0-9]/"))throw new IOException("同步目录含未知文件，未合并");for(String name:listing(ROOT+"changes/"+dir)){if(!name.matches(dir.charAt(0)+"[a-f0-9]{63}\\.json"))throw new IOException("同步文件名不正确");keys.put("changes/"+name);}}return new JSONObject().put("keys",keys);}
-        String key=input.getString("key"),path=object(key);if(!key.startsWith("changes/"))throw new IOException("请使用书籍接口");
-        if("get".equals(action)){try(Response response=request("GET",path,null)){success(response);return new JSONObject().put("text",new String(read(response.body().byteStream(),16L*1024*1024),StandardCharsets.UTF_8));}}
-        byte[] body=input.optString("text").getBytes(StandardCharsets.UTF_8);if(!"put".equals(action)||body.length>16*1024*1024||!key.equals("changes/"+hex(MessageDigest.getInstance("SHA-256").digest(body))+".json"))throw new IOException("同步文件校验不正确");
-        ensure(key);try(Response response=request("PUT",path,RequestBody.create(body,MediaType.get("application/json")),"If-None-Match","*")){if(response.code()==412){try(Response existing=request("GET",path,null)){success(existing);if(!Arrays.equals(body,read(existing.body().byteStream(),16L*1024*1024)))throw new IOException("云端文件校验失败");}}else success(response);}return new JSONObject().put("ok",true);
+        if(action.equals("list")){
+            String prefix=epoch.equals("legacy")?"changes/":"epochs/"+epoch+"/changes/";JSONArray keys=new JSONArray();
+            for(String dir:listing(ROOT+prefix)){if(epoch.equals("legacy")&&dir.equals("upgrade-required.json"))continue;if(!dir.matches("[a-f0-9]/"))throw new IOException("同步目录含未知文件，未合并");for(String name:listing(ROOT+prefix+dir)){if(!name.matches(dir.charAt(0)+"[a-f0-9]{63}\\.json"))throw new IOException("同步文件名不正确");keys.put(prefix+name);}}return new JSONObject().put("keys",keys);
+        }
+        if(action.equals("guard")){ensure(null);try(Response r=request("PUT",ROOT+"changes/upgrade-required.json",RequestBody.create("{\"minimumVersion\":\"2.4.0\"}",MediaType.get("application/json")))){success(r);}return new JSONObject().put("ok",true);}
+        String key=input.getString("key"),path=object(key);if(key.startsWith("books/"))throw new IOException("请使用书籍接口");
+        if(action.equals("delete")){try(Response r=request("DELETE",path,null)){if(r.code()!=404)success(r);}return new JSONObject().put("ok",true);}
+        if(action.equals("get")){try(Response r=request("GET",path,null)){success(r);return new JSONObject().put("text",new String(read(r.body().byteStream(),16L*1024*1024),StandardCharsets.UTF_8));}}
+        byte[] body=input.optString("text").getBytes(StandardCharsets.UTF_8);String name=key.substring(key.lastIndexOf('/')+1);
+        if(!action.equals("put")||body.length>16*1024*1024||!name.equals(hex(MessageDigest.getInstance("SHA-256").digest(body))+".json"))throw new IOException("同步文件校验不正确");
+        ensure(key);try(Response r=request("PUT",path,RequestBody.create(body,MediaType.get("application/json")),"If-None-Match","*")){if(r.code()==412){try(Response existing=request("GET",path,null)){success(existing);if(!Arrays.equals(body,read(existing.body().byteStream(),16L*1024*1024)))throw new IOException("云端文件校验失败");}}else success(r);}return new JSONObject().put("ok",true);
     }
     private static String hex(byte[] bytes){StringBuilder result=new StringBuilder();for(byte value:bytes)result.append(String.format(Locale.ROOT,"%02x",value));return result.toString();}
     JSONObject upload(File file)throws Exception {

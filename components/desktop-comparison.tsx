@@ -11,6 +11,7 @@ import {readDraft,writeDraft} from '@/lib/draft-storage';
 import {sourceLabel,thoughtSources,withThoughtSources,addThoughtSource} from '@/lib/book-notebook';
 import {type BookThought,type BookThoughtSource,crossNumber,numberOf} from '@/lib/notebook';
 import './desktop-comparison.css';
+import {isMobileReader} from '@/lib/reader-platform';
 
 export type CompareRequest={source:BookThoughtSource;entry?:BookThought};
 type Composition={sources:BookThoughtSource[];text:string;questionIds:string[];editingId:string|null;reason:string};
@@ -19,14 +20,15 @@ const empty:Draft={lastActive:'left',parked:[],left:null,right:null,sources:[],t
 type Props=Omit<LibraryReaderProps,'initialBookId'|'initialLocation'|'open'|'onOpenChange'> & {request:CompareRequest|null;onClose:(source?:BookThoughtSource)=>void};
 export function DesktopComparison({request,onClose,...reader}:Props){
  const {data,saving,save}=reader;
+ const mobile=isMobileReader();
  const [draft,setDraft]=useState<Draft>(empty),[ready,setReady]=useState(false),[picker,setPicker]=useState(false),[filter,setFilter]=useState(''),[activePane,setActivePane]=useState<'left'|'right'>('left'),[enlarged,setEnlarged]=useState<'left'|'right'|null>(null),[error,setError]=useState(''),[writing,setWriting]=useState(false),[wideEditor,setWideEditor]=useState(false);
  const [leftRequest,setLeftRequest]=useState<BookThoughtSource|null>(null),[rightRequest,setRightRequest]=useState<BookThoughtSource|null>(null);
- const draftRef=useRef(draft),queue=useRef<Promise<void>>(Promise.resolve()),layoutRef=useRef<HTMLDivElement>(null);draftRef.current=draft;
+ const draftRef=useRef(draft),queue=useRef<Promise<void>>(Promise.resolve()),layoutRef=useRef<HTMLDivElement>(null);useEffect(()=>{draftRef.current=draft;},[draft]);
  const persist=useCallback((value:Draft)=>{queue.current=queue.current.catch(()=>{}).then(()=>writeDraft('reading-comparison',value));return queue.current;},[]);
- useEffect(()=>{if(!request){setReady(false);return;}let cancelled=false;setError('');readDraft<Draft>('reading-comparison',empty).then(stored=>{
+ useEffect(()=>{if(!request){setReady(false);return;}let cancelled=false;setError('');readDraft<Draft>('reading-comparison',{...empty,stacked:mobile}).then(stored=>{
   if(cancelled)return;
   const valid=(source:BookThoughtSource|null)=>source&&data.libraryBooks.some(book=>book.id===source.libraryBookId&&book.format!=='reference');
-  const restored={...empty,...stored};
+  const restored={...empty,...stored,stacked:stored.stacked??mobile};
   // A saved shared thought explicitly opens its own two source positions.
   const sources=request.entry?thoughtSources(request.entry):undefined;
   let next:Draft;
@@ -62,7 +64,7 @@ export function DesktopComparison({request,onClose,...reader}:Props){
  function resize(event:React.PointerEvent){event.preventDefault();const node=layoutRef.current;if(!node)return;event.currentTarget.setPointerCapture(event.pointerId);const move=(pointer:PointerEvent)=>{const rect=node.getBoundingClientRect(),value=draftRef.current.stacked?(pointer.clientY-rect.top)/rect.height:(pointer.clientX-rect.left)/rect.width;setDraft(current=>({...current,ratio:Math.max(30,Math.min(70,value*100))}));};const stop=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);};window.addEventListener('pointermove',move);window.addEventListener('pointerup',stop,{once:true});window.addEventListener('pointercancel',stop,{once:true});}
  const books=data.libraryBooks.filter(book=>book.format!=='reference'&&`${book.title} ${book.author||''}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
  const locations=[...data.notes.filter(note=>note.kind==='question').map(note=>({id:note.id,label:`${note.parent?numberOf(note,data.notes,data.crossThoughts):'核心问题'} · ${note.title}`})),...data.crossThoughts.map(cross=>({id:cross.id,label:`${crossNumber(cross)} · ${cross.title||cross.text}`}))];
- return <Dialog open={!!request} onOpenChange={open=>{if(!open)void close();}}><DialogContent className={`comparison-dialog ${wideEditor?'wide-editor':''}`} showCloseButton={false} aria-describedby={undefined} onEscapeKeyDown={event=>{if(enlarged){event.preventDefault();setEnlarged(null);}}}>
+ return <Dialog open={!!request} onOpenChange={open=>{if(!open)void close();}}><DialogContent className={`comparison-dialog ${wideEditor?'wide-editor':''} ${mobile?'mobile-comparison':''}`} showCloseButton={false} aria-describedby={undefined} onEscapeKeyDown={event=>{if(enlarged){event.preventDefault();setEnlarged(null);}}}>
   <header className="comparison-header"><DialogTitle><BookOpen size={18}/>对照阅读</DialogTitle><div><Button size="sm" variant="ghost" onClick={()=>setDraft(current=>({...current,swapped:!current.swapped}))} disabled={!draft.right}><ArrowLeftRight/>交换左右</Button><Button size="sm" variant="ghost" onClick={()=>setDraft(current=>({...current,stacked:!current.stacked}))}>{draft.stacked?'左右排布':'上下排布'}</Button><Button size="sm" variant="outline" onClick={newThought} disabled={!draft.right||!ready}><Plus/>共同思考</Button><Button size="sm" variant="ghost" onClick={()=>void close()} aria-label="结束对照阅读"><X/></Button></div></header>
   {ready?<div ref={layoutRef} className={`comparison-layout ${draft.stacked?'stacked':''} ${draft.swapped?'swapped':''} ${enlarged?'enlarged-'+enlarged:''}`} style={{'--comparison-ratio':`${draft.ratio}%`} as React.CSSProperties}>
    {(['left','right'] as const).map(side=>{const source=side==='left'?leftRequest:rightRequest;return <section key={side} className={`comparison-pane pane-${side} ${activePane===side?'active':''}`}>

@@ -8,7 +8,7 @@ const scalars=['setupCompleted','dismissedSuggestions'] as const;
 const legacyScalars=[...scalars,'zoteroEnabled'] as const;
 const own=(object:object,key:string)=>Object.prototype.hasOwnProperty.call(object,key);
 export function stable(value:unknown):string {if(value===undefined)return 'null';if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(stable).join(',')+']';return '{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';}
-export function newSyncState(device=crypto.randomUUID()):SyncState{return {schema:1,device,enabled:false,target:'',operations:[],pending:[],received:[],observed:{}};}
+export function newSyncState(device:string=crypto.randomUUID()):SyncState{return {schema:1,device,enabled:false,target:'',operations:[],pending:[],received:[],observed:{}};}
 export function project(data:Notebook):Record<string,SyncValue>{
  const result:Record<string,SyncValue>={};if(data.setupCompleted===false)return result;
  for(const collection of collections)for(const item of data[collection]||[]){const record=item as unknown as Record<string,unknown>;const id=collection==='ocrCache'?JSON.stringify([record.libraryBookId,record.page]):collection==='zoteroCollections'?JSON.stringify([record.serverId,record.key]):record.id;if(typeof id!=='string'||!id)throw Error('有一条记录缺少编号，未进行同步。');if(collection==='libraryBooks'){const {progress,...metadata}=record;result[`${collection}/${encodeURIComponent(id)}`]=metadata;result[`readingProgress/${encodeURIComponent(id)}`]={id,progress:progress||{}};}else result[`${collection}/${encodeURIComponent(id)}`]=item;}

@@ -8,7 +8,7 @@ import type {Envelope} from '../lib/sync/client';
 import {newSyncState} from '../lib/sync/core';
 type CloudFile={key:string;sha256:string;size:number};
 type Config={configured:boolean;region?:string;bucket?:string;prefix?:string;accessKeyId?:string};
-interface NativeStorage{appReleases():Promise<{releases:unknown[]}>;openRelease(input:{url:string}):Promise<{ok:boolean}>;connectSync(input:{config:unknown}):Promise<unknown>;detachSync(input:{target:string}):Promise<unknown>;getSyncIdentity():Promise<{provider:string;configured:boolean;target:string}>;setSyncConnection(input:{config:unknown}):Promise<unknown>;readStore():Promise<{text?:string}>;writeStore(input:{text:string}):Promise<{ok:boolean}>;bookInfo(input:{name:string}):Promise<{available:boolean;uri:string}>;importBook():Promise<{cancelled?:boolean;name:string;storedFile:string;format:'pdf'|'epub'}>;getConfig():Promise<Config>;setConfig(input:{config:unknown}):Promise<Config>;remote(input:unknown):Promise<unknown>;transferBook(input:{name:string;action:string;file?:CloudFile;target?:string}):Promise<CloudFile>}
+interface NativeStorage{backupLocal():Promise<{backupPath:string}>;appReleases():Promise<{releases:unknown[]}>;openRelease(input:{url:string}):Promise<{ok:boolean}>;connectSync(input:{config:unknown}):Promise<unknown>;detachSync(input:{target:string}):Promise<unknown>;getSyncIdentity():Promise<{provider:string;configured:boolean;target:string}>;setSyncConnection(input:{config:unknown}):Promise<unknown>;readStore():Promise<{text?:string}>;writeStore(input:{text:string}):Promise<{ok:boolean}>;bookInfo(input:{name:string}):Promise<{available:boolean;uri:string}>;importBook():Promise<{cancelled?:boolean;name:string;storedFile:string;format:'pdf'|'epub'}>;getConfig():Promise<Config>;setConfig(input:{config:unknown}):Promise<Config>;remote(input:unknown):Promise<unknown>;transferBook(input:{name:string;action:string;file?:CloudFile;target?:string}):Promise<CloudFile>}
 const native=registerPlugin<NativeStorage>('WenjianStorage');
 const isNative=Capacitor.isNativePlatform();
 type Store=Envelope&{drafts:Record<string,unknown>};
@@ -44,6 +44,7 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
   if(route==='/api/sync/identity')return json(isNative?await native.getSyncIdentity():{provider:'oss',configured:false,target:''});
   if(route==='/api/sync/settings'){if(!isNative)throw Error('浏览器预览不保存云端密码，请在 App 中配置。');return await serial(async()=>{try{return json(await native.setSyncConnection({config:payload}));}finally{cached=undefined;}});}
   if(route==='/api/sync/connect'||route==='/api/sync/test'||route==='/api/sync/detach'){if(!isNative)throw Error('浏览器预览不连接个人云端，请在 App 中操作。');return await serial(async()=>{try{if(route.endsWith('/detach'))return json(await native.detachSync({target:payload.target||''}));const identity=await native.getSyncIdentity();return json(await native.connectSync({config:route.endsWith('/test')?{...identity,password:''}:payload}));}finally{cached=undefined;}});}
+  if(route==='/api/sync/backup-local'){if(!isNative)throw Error('请在安卓 App 中备份');return await serial(async()=>json(await native.backupLocal()));}
   if(route==='/api/sync/remote'){if(!isNative)throw Error('预览版本不连接云端');return json(await native.remote(payload));}
   if(route==='/api/sync/book'){
    const book=(await mobileSnapshot()).data.libraryBooks.find(b=>b.id===payload.id);if(!book)throw Error('没有找到这本书');
@@ -64,5 +65,5 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
    }
    return json({error:'此操作请在电脑端完成'},501);
   });
- }catch(error){const text=error instanceof Error?error.message:'本地操作没有完成';const match=/（(401|403|429|507)）/.exec(text);return json({error:text,code:match?Number(match[1]):undefined},500);}
+ }catch(error){const text=error instanceof Error?error.message:'本地操作没有完成';const match=/（(401|403|429|503|507)）/.exec(text);return json({error:text,code:match?Number(match[1]):undefined},500);}
 };}

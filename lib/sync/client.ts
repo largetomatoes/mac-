@@ -78,7 +78,7 @@ export async function syncBooks(snapshot:Envelope,progress?:(progress:SyncProgre
    const local=await syncApi<{available:boolean}>('book',{action:'status',id:book.id});
    if(!local.available){errors[book.id]='本机没有原文件，请在有原书的设备同步。';continue;}
    await syncApi('book',{action:'upload',target:snapshot.sync?.target,id:book.id});completed++;uploaded++;
-  }catch(error){errors[book.id]=error instanceof Error?error.message:'书籍上传未完成';if([401,403,429].includes((error as {code?:number}).code||0))break;}
+  }catch(error){errors[book.id]=error instanceof Error?error.message:'书籍上传未完成';if([401,403,429,503].includes((error as {code?:number}).code||0))break;}
  }
  const updated=await updateSync(state=>({...state,books:{errors,lastChecked:new Date().toISOString()}}));
  // Publish successful book manifests even when a different book failed.
