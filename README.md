@@ -4,7 +4,7 @@
 
 ## 下载与安装
 
-3.00 正在完成交付验证。变更、升级顺序及当前交付状态见 [3.00 发布说明](RELEASE_NOTES_3.00.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/mac-/releases) 的实际附件为准。
+3.00 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.00 发布说明](RELEASE_NOTES_3.00.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/mac-/releases) 的实际附件为准。
 
 从仓库的 **Releases** 下载对应系统的安装包。Mac（Apple 芯片）使用 `Wenjian-*-macOS-arm64.zip`，解压后把“问间”拖入“应用程序”；Windows x64 使用 `Wenjian-*-Windows-x64.zip`，解压后运行 `Wenjian.exe`。Android 8.0+ 使用 `Wenjian-*-Android.apk`，移动版以阅读和笔记为主；PDF 需要 WebView 111+。当前构建没有 Apple 公证或 Windows 商业代码签名，系统首次启动时可能要求手动允许。
 

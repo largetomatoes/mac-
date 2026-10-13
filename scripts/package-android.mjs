@@ -21,7 +21,9 @@ const env={...process.env,JAVA_HOME:javaHome,PATH:path.join(javaHome,'bin')+path
 const run=(binary,args)=>execFileSync(path.join(sdk,'build-tools/36.0.0',binary),args,{env,encoding:'utf8'});
 run('zipalign',['-f','-P','16','4',source,aligned]);
 run('apksigner',['sign','--ks',keystore,'--ks-key-alias',alias,'--ks-pass','file:'+password,'--v1-signer-name','CERT','--v1-signing-enabled','true','--v2-signing-enabled','true','--v3-signing-enabled','true','--v4-signing-enabled','false','--out',apk,aligned]);
-const certificate=run('apksigner',['verify','--verbose','--print-certs','--min-sdk-version','26',apk]);
+// Include pre-v2 platforms in verification so apksigner also checks v1 rather than skipping it.
+// This does not change the APK's minimum supported Android version.
+const certificate=run('apksigner',['verify','--verbose','--print-certs','--min-sdk-version','21',apk]);
 if(!/^[a-f0-9]{64}$/.test(expectedCertificate)||!/Signer #1 certificate SHA-256 digest: ([a-f0-9]+)/.exec(certificate)||/Signer #1 certificate SHA-256 digest: ([a-f0-9]+)/.exec(certificate)[1]!==expectedCertificate){fs.unlinkSync(apk);throw Error('签名与用户当前安卓证书不一致，未生成可发布安装包。');}
 for(const scheme of ['v1 scheme (JAR signing)','v2 scheme (APK Signature Scheme v2)','v3 scheme (APK Signature Scheme v3)'])if(!certificate.includes('Verified using '+scheme+': true'))throw Error('缺少有效的 '+scheme+' 签名');
 run('apksigner',['verify',apk]);
