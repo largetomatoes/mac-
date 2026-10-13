@@ -63,15 +63,16 @@ async function prepare() {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const plist = await readFile(path.join(appRoot, 'native-Info.plist'), 'utf8');
   const plistVersion = plistValue(plist, 'CFBundleShortVersionString');
-  if (manifest.version !== plistVersion) throw new Error(`应用版本不一致：${manifest.version} / ${plistVersion}`);
+  if ((manifest.releaseVersion||manifest.version) !== plistVersion) throw new Error(`应用版本不一致：${manifest.version} / ${plistVersion}`);
   return {
-    version: manifest.version,
+    version: manifest.releaseVersion||manifest.version,
+    packageVersion:manifest.version,
     buildVersion: plistValue(plist, 'CFBundleVersion'),
     appBundleId: plistValue(plist, 'CFBundleIdentifier'),
   };
 }
 
-const { version, buildVersion, appBundleId } = await prepare();
+const { version, packageVersion, buildVersion, appBundleId } = await prepare();
 if (prepareOnly) {
   console.log(`Mac arm64 打包文件已准备：${stage}（${version} build ${buildVersion}）`);
 } else {
@@ -110,7 +111,7 @@ if (prepareOnly) {
     arch: 'arm64',
     electronVersion: electronManifest.version,
     electronZipDir: process.env.WENJIAN_ELECTRON_ZIP_DIR || undefined,
-    appVersion: version,
+    appVersion: packageVersion,
     buildVersion,
     appBundleId,
     asar: true,
@@ -125,6 +126,7 @@ if (prepareOnly) {
   for (const name of ['Contents/Info.plist', 'Contents/Resources/app.asar', 'Contents/Resources/static/index.html', 'Contents/Resources/seed.json']) {
     await requireFile(path.join(application, name));
   }
+  execFileSync('/usr/libexec/PlistBuddy',['-c',`Set :CFBundleShortVersionString ${version}`,path.join(application,'Contents/Info.plist')]);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', application], { stdio: 'inherit' });
   execFileSync('codesign', ['--verify', '--deep', '--strict', application], { stdio: 'inherit' });
   const archive = path.join(releaseRoot, `Wenjian-${version}-macOS-arm64.zip`);

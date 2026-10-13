@@ -1,3 +1,4 @@
+const {parseJsonUtf8}=require('./text-encoding.cjs');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
@@ -57,7 +58,7 @@ async function writeBuffer(handle, bytes, offset) {
 async function exportCompleteBackup({ notebookPath, libraryDir, draftsPath, destination, validateNotebook }) {
   const notebookBytes = await fsp.readFile(notebookPath);
   if (notebookBytes.length > MAX_NOTEBOOK_SIZE) throw new Error('笔记文件过大，无法生成备份。');
-  const notebook = JSON.parse(notebookBytes.toString('utf8'));
+  const notebook = parseJsonUtf8(notebookBytes);
   if (!validateNotebook(notebook)) throw new Error('当前笔记数据格式不正确，备份已取消。');
   if (notebook.data.libraryBooks.some((book) => !book || (!referenceWithoutFile(book) && !safeStoredFile(book.storedFile)))) throw new Error('有书籍文件名不正确，备份已取消。');
   const names = [...new Set(notebook.data.libraryBooks.filter((book) => !referenceWithoutFile(book)).map((book) => book.storedFile))];
@@ -74,7 +75,7 @@ async function exportCompleteBackup({ notebookPath, libraryDir, draftsPath, dest
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (draftsBytes) {
       if (draftsBytes.length > MAX_DRAFT_SIZE) throw new Error('草稿文件过大，无法生成备份。');
-      const parsed = JSON.parse(draftsBytes.toString('utf8'));
+      const parsed = parseJsonUtf8(draftsBytes);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('草稿文件格式不正确，无法生成备份。');
     }
   }
@@ -173,14 +174,14 @@ async function inspectCompleteBackup(archivePath, validateNotebook) {
     const length = Number((await readExactly(handle, 8, MAGIC.length)).readBigUInt64BE());
     if (!Number.isSafeInteger(length) || length < 1 || length > MAX_MANIFEST_SIZE) throw new Error('备份清单不正确。');
     const manifestBytes = await readExactly(handle, length, MAGIC.length + 8);
-    manifest = JSON.parse(manifestBytes.toString('utf8'));
+    manifest = parseJsonUtf8(manifestBytes);
     const names = validateManifest(manifest);
     let offset = MAGIC.length + 8 + length;
     const notebookEnd = offset + manifest.notebook.size;
     if (!Number.isSafeInteger(notebookEnd) || notebookEnd > stat.size) throw new Error('备份文件不完整。');
     const notebookBytes = await readExactly(handle, manifest.notebook.size, offset);
     if (crypto.createHash('sha256').update(notebookBytes).digest('hex') !== manifest.notebook.sha256) throw new Error('备份中的笔记校验失败。');
-    notebook = JSON.parse(notebookBytes.toString('utf8'));
+    notebook = parseJsonUtf8(notebookBytes);
     if (!validateNotebook(notebook)) throw new Error('备份中的笔记数据格式不正确。');
     if (notebook.data.libraryBooks.some((book) => !book || (!referenceWithoutFile(book) && !safeStoredFile(book.storedFile)))) throw new Error('备份中的书籍记录不正确。');
     const referenced = new Set(notebook.data.libraryBooks.filter((book) => !referenceWithoutFile(book)).map((book) => book.storedFile));
@@ -191,7 +192,7 @@ async function inspectCompleteBackup(archivePath, validateNotebook) {
       if (!Number.isSafeInteger(draftsEnd) || draftsEnd > stat.size) throw new Error('备份文件不完整。');
       const draftsBytes = await readExactly(handle, manifest.drafts.size, offset);
       if (crypto.createHash('sha256').update(draftsBytes).digest('hex') !== manifest.drafts.sha256) throw new Error('备份中的草稿校验失败。');
-      drafts = JSON.parse(draftsBytes.toString('utf8'));
+      drafts = parseJsonUtf8(draftsBytes);
       if (!drafts || typeof drafts !== 'object' || Array.isArray(drafts)) throw new Error('备份中的草稿格式不正确。');
       offset = draftsEnd;
     }

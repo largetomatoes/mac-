@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const {decodeUtf8,parseJsonUtf8}=require('../work/mac-app/asar-src/text-encoding.cjs');
+const value={title:'问间 · 阅读笔记',path:'C:\\资料\\中文 书库\\原文.pdf',text:'中文 English，标点与 emoji 📖\n第二行'};
+const bytes=Buffer.from(JSON.stringify(value),'utf8');
+assert.deepEqual(parseJsonUtf8(bytes),value);
+assert.deepEqual(parseJsonUtf8(Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),bytes])),value,'UTF-8 BOM is accepted');
+assert.equal(decodeUtf8(Buffer.from(value.text,'utf8')),value.text);
+assert.throws(()=>parseJsonUtf8(Buffer.from([0x7b,0x22,0xc4,0xe3,0x22,0x7d])),/UTF-8/,'malformed bytes cannot turn into saved replacement characters');
+assert.throws(()=>parseJsonUtf8(Buffer.from([0xff,0xfe,0x7b,0x00])),/UTF-8/,'UTF-16 must not be silently treated as UTF-8');
+console.log('PASS: Chinese paths, mixed text, emoji, UTF-8 JSON roundtrip, BOM and rejection before lossy decoding');

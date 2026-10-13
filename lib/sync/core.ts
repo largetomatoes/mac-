@@ -7,13 +7,21 @@ const collections=['notes','links','cards','readingNotes','crossThoughts','thoug
 const scalars=['setupCompleted','dismissedSuggestions'] as const;
 const legacyScalars=[...scalars,'zoteroEnabled'] as const;
 const own=(object:object,key:string)=>Object.prototype.hasOwnProperty.call(object,key);
-export function stable(value:unknown):string {if(value===undefined)return 'null';if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(stable).join(',')+']';return '{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';}
+export function stable(value:unknown):string {if(value===undefined)return 'null';if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(stable).join(',')+']';return '{'+Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';}
 export function newSyncState(device:string=crypto.randomUUID()):SyncState{return {schema:1,device,enabled:false,target:'',operations:[],pending:[],received:[],observed:{}};}
 export function project(data:Notebook):Record<string,SyncValue>{
  const result:Record<string,SyncValue>={};if(data.setupCompleted===false)return result;
  for(const collection of collections)for(const item of data[collection]||[]){const record=item as unknown as Record<string,unknown>;const id=collection==='ocrCache'?JSON.stringify([record.libraryBookId,record.page]):collection==='zoteroCollections'?JSON.stringify([record.serverId,record.key]):record.id;if(typeof id!=='string'||!id)throw Error('有一条记录缺少编号，未进行同步。');if(collection==='libraryBooks'){const {progress,...metadata}=record;result[`${collection}/${encodeURIComponent(id)}`]=metadata;result[`readingProgress/${encodeURIComponent(id)}`]={id,progress:progress||{}};}else result[`${collection}/${encodeURIComponent(id)}`]=item;}
  for(const key of scalars)result['settings/'+key]=data[key]??(key==='dismissedSuggestions'?[]:true);
  return result;
+}
+export function baselineDifferences(local:Notebook,cloud:Notebook){
+ const before=project(cloud),after=project(local),counts={added:0,changed:0,removed:0};
+ for(const key of new Set([...Object.keys(before),...Object.keys(after)])){
+  if(key.startsWith('readingProgress/')||key.startsWith('ocrCache/')||key.startsWith('settings/'))continue;
+  if(!own(before,key))counts.added++;else if(!own(after,key))counts.removed++;else if(stable(before[key])!==stable(after[key]))counts.changed++;
+ }
+ return counts;
 }
 export function validateOperation(value:unknown):value is Operation {
  if(!value||typeof value!=='object')return false;const op=value as Operation;
@@ -101,6 +109,23 @@ export function resolveConflict(state:SyncState,key:string,chosenId:string,id=cr
  const options=tips(state.operations).get(key)||[],chosen=options.find(op=>op.id===chosenId);if(!chosen)throw Error('待处理版本已变化，请重新打开同步窗口。');
  const op:Operation={id,key,value:structuredClone(chosen.value),parents:options.map(o=>o.id),device:state.device,at:new Date().toISOString()};
  return {...state,operations:unionOperations(state.operations,[op]),pending:unionOperations(state.pending,[op])};
+}
+
+// observed includes captured (but possibly unacknowledged) edits. Rebase from the
+// acknowledged graph so a failed upload cannot make those offline edits disappear.
+export function rebaseOffline(state:SyncState,data:Notebook,remote:Operation[],remoteData:Notebook):Operation[]{
+ const captured=capture(state,data),pendingIds=new Set(captured.pending.map(op=>op.id));
+ const committed=captured.operations.filter(op=>!pendingIds.has(op.id)),before=tips(committed),heads=tips(remote);
+ const local=project(data),cloud=project(remoteData),created:Operation[]=[];
+ for(const key of new Set(captured.pending.map(op=>op.key))){
+  if(key==='settings/zoteroEnabled')continue;
+  const previous=before.get(key)||[],value=previous.length?mergedValue(key,previous,committed):{ok:true,value:null};
+  if(value.ok&&stable(value.value)===stable(local[key]))continue;
+  const current=heads.get(key)||[],cloudValue=current.length?mergedValue(key,current,remote):{ok:true,value:null};
+  const same=value.ok&&cloudValue.ok&&stable(value.value)===stable(cloud[key]);
+  created.push({id:crypto.randomUUID(),key,value:local[key]??null,parents:same?current.map(op=>op.id):[],at:new Date().toISOString(),device:state.device,deviceName:state.deviceName});
+ }
+ return created;
 }
 
 export function validateGraph(operations:Operation[]){const byId=new Map(operations.map(op=>[op.id,op]));const visiting=new Set<string>(),visited=new Set<string>();function visit(op:Operation){if(visiting.has(op.id))throw Error('同步记录依赖出现循环。');if(visited.has(op.id))return;visiting.add(op.id);for(const parent of op.parents){const previous=byId.get(parent);if(!previous||previous.key!==op.key)throw Error('同步记录的前一版本缺失，请重新同步。');visit(previous);}visiting.delete(op.id);visited.add(op.id);}for(const op of operations)visit(op);}

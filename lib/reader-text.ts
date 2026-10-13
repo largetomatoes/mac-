@@ -7,6 +7,24 @@ export function cleanReadingText(value:string):string {
   .replace(/([\p{Script=Han}][，。！？；：、,!?;:]) (?=[\p{Script=Han}])/gu,'$1')
   .split('\n').map(line=>line.trim()).join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
+// Use only for a newly extracted PDF/OCR quote, never for saved user text.
+// Double newlines carry real paragraph boundaries; the UI handles visual wrapping.
+export function reflowReadingExcerpt(value:string):string {
+ const text=cleanReadingText(value),lines=text.split('\n'),parts:string[]=[];
+ const listItem=(line:string)=>/^(?:[-*•●▪]\s|\d{1,3}[.)、](?:\s|(?=[\p{Script=Han}]))|[一二三四五六七八九十]+[、.])/u.test(line);
+ const heading=(line:string)=>/^(?:第.{0,20}[章节篇部](?:\s|$)|#{1,6}\s)/u.test(line);
+ for(const line of lines){
+  if(!line){if(parts.length&&parts.at(-1)!=='')parts.push('');continue;}
+  const previous=parts.at(-1);
+  if(!previous||listItem(line)||heading(line)||heading(previous)){parts.push(line);continue;}
+  const left=previous.at(-1)||'',right=line[0]||'';
+  if(left==='\u00ad'&&/^\p{L}/u.test(line)){parts[parts.length-1]=previous.slice(0,-1)+line;continue;}
+  const cjk=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+  const separator=cjk.test(left)&&cjk.test(right)||/[，。！？；：、）》】」』〕”’),.!?;:]/u.test(right)||/[（《【「『〔“‘(]/u.test(left)||/[，。！？；：、）》】」』〕”’]/u.test(left)&&cjk.test(right)||/[-‐‑–—/]/u.test(left)?'':' ';
+  parts[parts.length-1]=previous+separator+line;
+ }
+ return parts.join('\n').trim();
+}
 export function searchableText(value:string){return value.replace(/\s/g,'');}
 export function textIndex(value:string){let text='';const offsets:number[]=[];for(let i=0;i<value.length;i++)if(!/\s/.test(value[i])){text+=value[i];offsets.push(i);}return {text,offsets};}
 export function usablePdfText(items:Array<{str?:string}>){const value=items.map(item=>item.str||'').join('').trim(),bad=(value.match(/[\uFFFD\u0000-\u0008\uE000-\uF8FF]/g)||[]).length;return value.replace(/\s/g,'').length>=20&&bad/Math.max(1,value.length)<.02;}

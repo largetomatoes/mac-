@@ -98,3 +98,6 @@ next-env.d.ts
 !/work/mac-app/asar-src/local-sync-migration.cjs
 
 !/work/mac-app/asar-src/app-updates.cjs
+!/work/mac-app/asar-src/text-encoding.cjs
+.keystore_pass
+*.idsig

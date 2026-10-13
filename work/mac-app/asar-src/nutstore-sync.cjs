@@ -88,7 +88,7 @@ function createNutstoreClient(input, options={}) {
     if(action==='control-get'||action==='control-put'){
       if(!['library.json','lease.json'].includes(key))throw new Error('同步控制文件无效。');
       if(action==='control-get'){const r=await request('GET',ROOT+key);if(r.statusCode===404)return {text:null,etag:null};success(r);return {text:r.body.toString('utf8'),etag:r.headers.etag||null};}
-      if(typeof text!=='string'||Buffer.byteLength(text)>65536)throw new Error('同步控制内容无效。');await ensure();
+      if(typeof text!=='string'||Buffer.byteLength(text)>65536)throw new Error('同步控制内容无效。');if(!etag)await ensure();
       const r=await request('PUT',ROOT+key,{headers:{'content-type':'application/json',...(etag?{'If-Match':etag}:{'If-None-Match':'*'})},body:Buffer.from(text)});success(r);return {ok:true};
     }
     if(action==='guard'){await ensure();success(await request('PUT',ROOT+'changes/upgrade-required.json',{body:Buffer.from('{"minimumVersion":"2.4.0"}')}));return {ok:true};}
@@ -97,9 +97,10 @@ function createNutstoreClient(input, options={}) {
     }
     if(key?.startsWith('snapshots/')||key?.startsWith('epochs/')){
       if(!/^(snapshots\/[a-f0-9]{64}\.json|epochs\/[a-zA-Z0-9_-]{8,100}\/changes\/[a-f0-9]{64}\.json)$/.test(key))throw new Error('同步文件无效。');
-      const parts=key.split('/');const name=parts.pop();if(key.startsWith('epochs/'))parts.push(name[0]);const folder=ROOT+parts.join('/')+'/';await ensure();let parent=ROOT;for(const part of parts){parent+=part+'/';await mkdir(parent);}
+      const parts=key.split('/');const name=parts.pop();if(key.startsWith('epochs/'))parts.push(name[0]);const folder=ROOT+parts.join('/')+'/';
       if(action==='get')return {text:success(await request('GET',folder+name)).body.toString('utf8')};
       if(action!=='put'||typeof text!=='string'||Buffer.byteLength(text)>16*1024*1024||sha(text)!==name.slice(0,-5))throw new Error('同步内容校验失败。');
+      await ensure();let parent=ROOT;for(const part of parts){parent+=part+'/';await mkdir(parent);}
       const r=await request('PUT',folder+name,{headers:{'If-None-Match':'*'},body:Buffer.from(text)});if(r.statusCode===412){if(!success(await request('GET',folder+name)).body.equals(Buffer.from(text)))throw new Error('云端已有文件不一致。');}else success(r);return {ok:true};
     }
     if(action==='list'&&epoch&&epoch!=='legacy'){

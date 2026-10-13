@@ -12,8 +12,8 @@ const model=load('lib/notebook.ts',{'./library-folders':load('lib/library-folder
 const deletion=load('lib/deletion.ts',{'./notebook':model});
 const initial=model.changeCoreQuestion(copy(model.initialNotebook),'测试问题');
 initial.libraryBooks=[{id:'book',title:'测试书',author:'',format:'pdf',storedFile:'test.pdf',originalName:'test.pdf',addedAt:'2026-10-06',progress:{page:2},pdfChapters:[],inReadingLibrary:true}];
-initial.libraryHighlights=[{id:'h',libraryBookId:'book',quote:'原文',locator:'第2页',sourceLocation:'pdf:2',at:'2026-10-06'}];
-const entry={libraryBookId:'book',page:2,text:'识别文字',lines:[{text:'识别文字',x0:0,y0:0,x1:1,y1:.1}],at:'2026-10-06T10:00:00Z',rotation:0,version:7};
+initial.libraryHighlights=[{id:'h',libraryBookId:'book',quote:'原文',rawQuote:'原\n文',locator:'第2页',sourceLocation:'pdf:2',at:'2026-10-06'}];
+const entry={libraryBookId:'book',page:2,text:'识别文字',lines:[{text:'识别文字',paragraph:2,x0:0,y0:0,x1:1,y1:.1}],at:'2026-10-06T10:00:00Z',rotation:0,version:7};
 assert.equal(cache.validOcrEntry(entry),true);
 for(const invalid of [{...entry,page:0},{...entry,at:'bad'},{...entry,lines:[]},{...entry,rotation:45},{...entry,lines:[{...entry.lines[0],x0:2}]}])assert.equal(cache.validOcrEntry(invalid),false);
 const source=fs.readFileSync('work/mac-app/asar-src/main.js','utf8'),ast=ts.createSourceFile('main.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
@@ -25,7 +25,7 @@ for(const factory of [desktop,web]){
  const responses=await Promise.all([h.request('PUT',{version:0,data:next}),h.request('PATCH',{version:0,entry})]);
  same(responses.map(r=>r.status),[200,409]);
  assert.equal((await h.request('PATCH',{version:h.state.version,entry,data:{notes:[]}})).status,200);
- assert.equal(h.state.data.notes[0].thoughts[0].text,'新笔记不能丢');same(h.state.data.libraryBooks,initial.libraryBooks);same(h.state.data.libraryHighlights,initial.libraryHighlights);
+ assert.equal(h.state.data.notes[0].thoughts[0].text,'新笔记不能丢');same(h.state.data.libraryBooks,initial.libraryBooks);same(h.state.data.libraryHighlights,initial.libraryHighlights);assert.equal(h.state.data.ocrCache[0].lines[0].paragraph,2);
  assert.equal((await h.request('PATCH',{version:h.state.version,entry:{...entry,at:'2020-01-01T00:00:00Z',text:'过时结果'}})).status,200);assert.equal(h.state.data.ocrCache[0].text,entry.text);
  let before=copy(h.state);h.fail=true;assert.ok((await h.request('PATCH',{version:h.state.version,entry:{...entry,page:3}})).status>=500);same(h.state,before);h.fail=false;
  assert.equal((await h.request('PATCH',{version:h.state.version,entry:{...entry,page:3}})).status,200);

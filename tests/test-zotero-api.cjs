@@ -44,6 +44,7 @@ async function harness(t, options = {}) {
   const opened = [], fileOperations = [], writes = [], catalogs = [], probes = [];
   let cancelledProbeBodies = 0;
   const context = vm.createContext({
+    detachThoughtBook:require('../work/mac-app/asar-src/book-thought-sources.cjs').detachThoughtBook,
     localPort: 45555, restoringBackup: false, zoteroCatalogJob: null, libraryDir,
     path, crypto, URLSearchParams, AbortSignal, console: { error() {} },
     fetch: async (url, config) => {

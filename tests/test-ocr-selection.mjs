@@ -22,4 +22,11 @@ const incomplete=ocrSelectionRuns([line('不能丢失最后文字',[word('不能
 const oldCache={...english,words:undefined};assert.equal(ocrSelectionRuns([oldCache])[0].text,english.text);
 const snapshot=JSON.stringify(chinese);ocrSelectionRuns([chinese]);assert.equal(JSON.stringify(chinese),snapshot,'cached OCR geometry stays unchanged');
 assert.equal(ocrSelectionRuns([chinese,english]).map(r=>r.text+r.suffix).join(''),'我们如何，理解世界？\nReading connects ideas.\n');
+const positioned=(text,y0,paragraph,x0=.1)=>({text,x0,x1:.8,y0,y1:y0+.02,...(paragraph===undefined?{}:{paragraph})});
+const excerpt=lines=>text.reflowReadingExcerpt(ocrSelectionRuns(lines).map(run=>run.text+run.suffix).join(''));
+assert.equal(excerpt([positioned('段内第一行',.1,0),positioned('段内第二行',.14,0),positioned('下一段',.18,1)]),'段内第一行段内第二行\n\n下一段','explicit OCR paragraph IDs take precedence over line spacing');
+assert.equal(excerpt([positioned('旧缓存第一行',.1),positioned('续行',.13),positioned('下一段',.2)]),'旧缓存第一行续行\n\n下一段','legacy cache keeps large paragraph gaps');
+assert.equal(excerpt([positioned('左栏末行',.7),positioned('右栏开头',.1,undefined,.6)]),'左栏末行\n\n右栏开头','a column change cannot join unrelated paragraphs');
+const paragraphGeometry=[positioned('第一段',.1,0),positioned('第二段',.14,1)];
+assert.deepEqual(ocrSelectionRuns(paragraphGeometry).map(({x0,x1,y0,y1})=>({x0,x1,y0,y1})),ocrSelectionRuns(paragraphGeometry.map(({paragraph,...line})=>line)).map(({x0,x1,y0,y1})=>({x0,x1,y0,y1})),'paragraph metadata changes text boundaries without shifting selectable boxes');
 console.log('PASS: continuous hit boxes, consistent line height, exact Chinese/English excerpts, partial words, zoom, column gutters, overlapping boxes, incomplete/legacy caches and immutable OCR data');

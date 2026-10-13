@@ -839,6 +839,7 @@ input.material-picker-search { width: calc(100% - 48px); height: 36px; backgroun
 }
 
 .device-sync-dialog{width:min(680px,94vw)!important;max-height:88dvh;overflow-y:auto}.device-sync-dialog h2{display:flex;align-items:center;gap:8px}.device-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.sync-error{color:#a23e32}.sync-conflict{border-top:1px solid #ddd3c4;padding:16px 0;display:grid;gap:14px}.sync-conflict>div{padding:12px;background:#f6f3ee;border-radius:10px}.sync-conflict small{display:block;color:#716b62;margin:8px 0}.sync-conflict pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:12px}
+.sync-baseline{border:1px solid #d9dfd6;border-radius:12px;padding:16px;font-size:13px;line-height:1.8;overflow-wrap:anywhere}.sync-baseline p{margin:0 0 12px}.sync-baseline>div{border-top:1px solid #d9dfd6;margin-top:14px;padding-top:14px}.sync-baseline button{margin:4px 8px 4px 0;max-width:100%;white-space:normal;min-height:40px;height:auto}.sync-baseline label{display:grid;gap:6px;margin:12px 0}.sync-baseline select{width:100%;min-width:0;max-width:100%;padding:9px 12px;border:1px solid #c8d0c4;border-radius:8px;background:var(--background);color:inherit;font:inherit}.sync-baseline input{min-height:40px}
 
 .sync-provider-tabs{display:flex;gap:6px;padding:4px;background:#f0ede7;border-radius:12px;}
 .sync-provider-tabs button{flex:1;padding:9px 14px;border-radius:9px;color:#766b5f;}

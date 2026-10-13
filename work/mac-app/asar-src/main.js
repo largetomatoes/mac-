@@ -1,3 +1,5 @@
+const {parseJsonUtf8}=require('./text-encoding.cjs');
+const RELEASE_VERSION=require('./package.json').releaseVersion||require('./package.json').version;
 const {detachThoughtBook}=require('./book-thought-sources.cjs');
 const { validSettings, validateCoreTransition, validateReadingTransition } = require('./notebook-settings.cjs');
 const {validOcrEntry,mergeOcrPage}=require('./ocr-cache.cjs');
@@ -46,7 +48,7 @@ app.commandLine.appendSwitch('proxy-bypass-list', 'localhost;127.0.0.1;[::1]');
 app.commandLine.appendSwitch('host-resolver-rules', 'MAP * 0.0.0.0, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]');
 app.setName('问间');
 if (process.env.WENJIAN_TEST_DATA_DIR) app.setPath('userData', process.env.WENJIAN_TEST_DATA_DIR);
-app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: app.getVersion(), version: app.getVersion(), copyright: '围绕核心问题的本地笔记应用' });
+app.setAboutPanelOptions({ applicationName: '问间', applicationVersion: RELEASE_VERSION, version: RELEASE_VERSION, copyright: '围绕核心问题的本地笔记应用' });
 
 async function resolveStorageDirectory() {
   const localDir = app.getPath('userData');
@@ -55,7 +57,7 @@ async function resolveStorageDirectory() {
   const defaultNutstoreDir = path.join(app.getPath('home'), 'Documents', '问间同步');
   let config;
   try {
-    config = JSON.parse(await fsp.readFile(configPath, 'utf8'));
+    config = parseJsonUtf8(await fsp.readFile(configPath));
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('同步目录配置无法读取，请检查 sync-config.json。');
   }
@@ -90,13 +92,15 @@ function normalizeNotebookData(data) {
   return { ...data, thoughtReplies: data.thoughtReplies || [], manuscripts: data.manuscripts || [], libraryBooks: (data.libraryBooks || []).map((book) => ({ ...book, pdfChapters: (book.pdfChapters || []).filter((chapter) => chapter && typeof chapter.title === 'string' && Number.isInteger(chapter.startPage) && chapter.startPage > 0) })), libraryHighlights: data.libraryHighlights || [], ocrCache: data.ocrCache || [], bookThoughts: (data.bookThoughts || []).map((entry) => ({ ...entry, scope: entry.scope || 'book', locator: entry.locator || '', quote: entry.quote || undefined, chapter: entry.chapter || undefined, questionIds: entry.questionIds || [], thoughts: entry.thoughts || [] })), links: data.links || [], dismissedSuggestions: data.dismissedSuggestions || [] };
 }
 async function readStore() {
-  const value = JSON.parse(await fsp.readFile(dataPath, 'utf8'));
+  const value = parseJsonUtf8(await fsp.readFile(dataPath));
   value.data = normalizeNotebookData(value.data || {});
   if (!Number.isInteger(value.version) || !validNotebookData(value.data)) throw new Error('本地数据格式不正确');
   return value;
 }
 async function writeStore(value) {
-  if(value.sync===undefined){const previous=JSON.parse(await fsp.readFile(dataPath,"utf8"));if(previous.sync)value={...value,sync:previous.sync,syncRevision:previous.syncRevision||0};}
+  const previous=parseJsonUtf8(await fsp.readFile(dataPath));
+  if(value.sync===undefined&&previous.sync)value={...value,sync:previous.sync,syncRevision:previous.syncRevision||0};
+  if(JSON.stringify(previous)===JSON.stringify(value))return;
   const temporary = `${dataPath}.new`;
   const backup = `${dataPath}.backup`;
   const backupTemporary = `${backup}.new-${crypto.randomUUID()}`;
@@ -119,7 +123,7 @@ async function requestBody(request) {
     if (length > 40 * 1024 * 1024) throw new Error('请求过大');
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return parseJsonUtf8(Buffer.concat(chunks));
 }
 
 async function readDrafts() {
@@ -127,7 +131,7 @@ async function readDrafts() {
   try { bytes = await fsp.readFile(draftsPath); }
   catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
   if (bytes.length > MAX_DRAFT_BYTES) throw new Error('草稿文件超过大小限制。');
-  const value = JSON.parse(bytes.toString('utf8'));
+  const value = parseJsonUtf8(bytes);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('草稿文件格式不正确。');
   return value;
 }
@@ -218,6 +222,7 @@ async function handleApi(request, response) {
       if (!validNotebookData(input.data)) return jsonReply(response, 400, { error: '笔记数据格式不正确。' });
       const coreError = validateCoreTransition(current.data, input.data) || validateReadingTransition(current.data, input.data);
       if (coreError) return jsonReply(response, 400, { error: coreError });
+      if(JSON.stringify(current.data)===JSON.stringify(input.data))return jsonReply(response,200,{version:current.version});
       await writeStore({ version: current.version + 1, data: input.data });
       return jsonReply(response, 200, { version: current.version + 1 });
     }
@@ -439,7 +444,7 @@ async function atomicPrivateJson(filePath, value) {
   }
 }
 async function storedCloudConfig() {
-  try { return JSON.parse(await fsp.readFile(cloudConfigPath(), 'utf8')); }
+  try { return parseJsonUtf8(await fsp.readFile(cloudConfigPath())); }
   catch (error) { if (error.code === 'ENOENT') return null; throw new Error('云备份设置无法读取。'); }
 }
 function publicCloudConfig(stored) {
@@ -456,7 +461,7 @@ async function activeCloudConfig() {
   return validateOssConfig({ ...stored, accessKeySecret });
 }
 async function readCloudState() {
-  try { return JSON.parse(await fsp.readFile(cloudStatePath(), 'utf8')); }
+  try { return parseJsonUtf8(await fsp.readFile(cloudStatePath())); }
   catch (error) { if (error.code === 'ENOENT') return null; throw new Error('云备份状态无法读取。'); }
 }
 async function saveCloudState(config, key) {
@@ -587,7 +592,7 @@ async function handleCloud(request, response, pathname) {
 
 
 async function storedSyncConnection() {
-  try { return JSON.parse(await fsp.readFile(path.join(app.getPath('userData'),'device-sync-connection.json'),'utf8')); }
+  try { return parseJsonUtf8(await fsp.readFile(path.join(app.getPath('userData'),'device-sync-connection.json'))); }
   catch(error){if(error.code==='ENOENT')return {provider:'oss'};throw new Error('同步连接设置无法读取。');}
 }
 async function syncIdentity(){
@@ -711,6 +716,7 @@ async function handleDeviceSync(request,response,url) {
       if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份'});
       const current=await readStore();if(input.version!==current.version||(input.syncRevision||0)!==(current.syncRevision||0))return jsonReply(response,409,{error:'本机刚保存新内容，正在重新合并。'});
       if(!validNotebookData(input.data)||input.sync?.schema!==1||!Array.isArray(input.sync.operations)||!Array.isArray(input.sync.pending))return jsonReply(response,400,{error:'同步资料无效'});
+      if(storageMode!=='nutstore'&&JSON.stringify(current.data)===JSON.stringify(input.data)&&JSON.stringify(current.sync)===JSON.stringify(input.sync))return jsonReply(response,200,{...current,storage:storageMode});
       if(storageMode==='nutstore'&&input.sync.enabled){
         const directory=await isolateLegacyNotebook({localDir:app.getPath('userData'),legacyDir:storageDir,expected:current,readCurrent:readStore,saveConfig:config=>atomicPrivateJson(path.join(app.getPath('userData'),'sync-config.json'),config)});
         storageDir=directory;dataPath=path.join(directory,'notebook.json');storageMode='local';
@@ -722,7 +728,7 @@ async function handleDeviceSync(request,response,url) {
     if(route==='book'){
       const book=(await readStore()).data.libraryBooks.find(b=>b.id===input.id);if(!book||!['pdf','epub'].includes(book.format)||!book.storedFile||path.basename(book.storedFile)!==book.storedFile)throw new Error('未找到书籍原文件。');
       const destination=path.join(libraryDir,book.storedFile);
-      if(input.action==='status')return jsonReply(response,200,{available:fs.existsSync(destination)});
+      if(input.action==='status'){const stat=await fsp.stat(destination).catch(error=>error.code==='ENOENT'?null:Promise.reject(error));return jsonReply(response,200,{available:!!stat?.isFile()&&stat.size>0&&(!book.cloudFile||stat.size===book.cloudFile.size)});}
       const client=await active();
       if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
       if(input.action==='upload'){
@@ -739,7 +745,7 @@ async function handleAppUpdates(request,response,url){
   const origin=`http://127.0.0.1:${localPort}`;
   if(request.headers.host!==`127.0.0.1:${localPort}`||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
   try{
-    if(pathname==='/api/app/info'&&request.method==='GET')return jsonReply(response,200,{version:app.getVersion(),build:String(require('./package.json').buildVersion||''),platform:process.platform,arch:process.arch});
+    if(pathname==='/api/app/info'&&request.method==='GET')return jsonReply(response,200,{version:RELEASE_VERSION,build:String(require('./package.json').buildVersion||''),platform:process.platform,arch:process.arch});
     if(pathname==='/api/app/releases'&&request.method==='GET')return jsonReply(response,200,await cachedPublicReleases(path.join(app.getPath('userData'),'update-check-cache.json'),url.searchParams.get('manual')==='1'));
     if(pathname==='/api/app/open'&&request.method==='POST'){
       const value=await requestBody(request);
@@ -804,7 +810,7 @@ async function chooseBackup() {
       summary = await inspectCompleteBackup(source, (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data));
     } else {
       if ((await fsp.stat(source)).size > 256 * 1024 * 1024) throw new Error('旧版 JSON 备份文件过大。');
-      value = JSON.parse(await fsp.readFile(source, 'utf8'));
+      value = parseJsonUtf8(await fsp.readFile(source));
       value.data = normalizeNotebookData(value.data || {});
       if (!Number.isInteger(value.version) || !validNotebookData(value.data)) throw new Error('不是有效的问间备份。');
     }

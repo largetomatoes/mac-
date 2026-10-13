@@ -85,7 +85,7 @@ async function prepare() {
   await cp(wizard, path.join(resourceStage, 'static', 'assets', 'cloud-import.js'));
   const htmlPath = path.join(resourceStage, 'static', 'index.html');
   const html = await readFile(htmlPath, 'utf8');
-  if (!html.includes('cloud-import.js')) await writeFile(htmlPath, html.replace('</body>', '<script src="/assets/cloud-import.js"></script></body>'));
+  if (!html.includes('cloud-import.js')) await writeFile(htmlPath, html.replace('</body>', '<script charset="utf-8" src="/assets/cloud-import.js"></script></body>'), 'utf8');
   const dependencies = ['pdf-lib', 'pako', 'tslib', '@pdf-lib/standard-fonts', '@pdf-lib/upng'];
   for (const dependency of dependencies) {
     await cp(path.join(macAppRoot, 'node_modules', dependency), path.join(stage, 'node_modules', dependency), { recursive: true });
@@ -97,10 +97,10 @@ async function prepare() {
   manifest.author = '问间';
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   const icon = await makeWindowsIcon();
-  return { icon, version: manifest.version };
+  return { icon, version: manifest.releaseVersion||manifest.version, packageVersion:manifest.version };
 }
 
-const { icon, version } = await prepare();
+const { icon, version, packageVersion } = await prepare();
 if (prepareOnly) {
   console.log(`Windows 打包文件已准备：${stage}`);
 } else {
@@ -113,7 +113,7 @@ if (prepareOnly) {
     arch: 'x64',
     electronVersion: electronManifest.version,
     electronZipDir: process.env.WENJIAN_ELECTRON_ZIP_DIR || undefined,
-    appVersion: version,
+    appVersion: packageVersion,
     asar: true,
     prune: false,
     overwrite: true,
@@ -128,6 +128,6 @@ if (prepareOnly) {
     await requireFile(path.join(appRoot, name));
   }
   const archive = path.join(macAppRoot, 'release', `Wenjian-${version}-Windows-x64.zip`);
-  execFileSync('python3', [path.join(macAppRoot, 'scripts/archive-windows.py'), appRoot, archive], { stdio: 'inherit' });
+  execFileSync('python3', [path.join(macAppRoot, 'scripts/archive-windows.py'), appRoot, archive], { stdio: 'inherit',env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'} });
   console.log(`问间 Windows x64 ${version} 已打包：${appRoot}`);
 }

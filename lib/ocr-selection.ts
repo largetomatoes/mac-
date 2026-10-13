@@ -24,9 +24,11 @@ export function ocrSelectionRuns(lines:OcrLine[]):OcrSelectionRun[]{
    return next.x0>word.x0&&next.x1>word.x1&&gap<=maxGap?(word.x1+next.x0)/2:null;
   });
   const y0=Math.min(line.y0,...words.map(word=>word.y0)),y1=Math.max(line.y1,...words.map(word=>word.y1));
+  const nextLine=lines[lineIndex+1],height=Math.max(.001,line.y1-line.y0);
+  const paragraphBreak=nextLine&&(line.paragraph!==undefined&&nextLine.paragraph!==undefined?line.paragraph!==nextLine.paragraph:nextLine.y0-line.y1>height*.8||nextLine.y0<line.y0-height*.5||nextLine.x0-line.x0>height*2);
   return words.map((word,index)=>({
    text:word.text,
-   suffix:index===words.length-1?'\n':source.slice(positions[index]+word.text.length,positions[index+1]),
+   suffix:index===words.length-1?(paragraphBreak?'\n\n':'\n'):source.slice(positions[index]+word.text.length,positions[index+1]),
    x0:index>0?(boundaries[index-1]??word.x0):word.x0,
    x1:boundaries[index]??word.x1,y0,y1,line:lineIndex,
   }));

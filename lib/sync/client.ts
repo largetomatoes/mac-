@@ -17,19 +17,36 @@ export async function updateSync(change:(state:SyncState)=>SyncState):Promise<En
  throw Error('本机正在连续保存，请稍后重试。');
 }
 let running:Promise<Envelope>|null=null;
-export function syncNow(onProgress?:(progress:SyncProgress)=>void,mode?:'join'|'merge',rootId?:string):Promise<Envelope>{if(running)return running;running=run(onProgress,mode,rootId).finally(()=>{running=null;});return running;}
-async function run(progress?: (progress:SyncProgress)=>void,mode?:'join'|'merge',rootId?:string):Promise<Envelope>{
+export type SyncMode='join'|'merge'|'local';
+export function syncNow(onProgress?:(progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{if(running)return mode?Promise.reject(Error('另一项同步正在进行，请完成后再选择资料库基准。')):running;running=run(onProgress,mode,rootId).finally(()=>{running=null;});return running;}
+async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{
  const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number}>('identity');
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
- if(config.protocol===2)return withCloudLease(config.target,async renew=>{const prepared=await prepareDesktopSync(config.target,mode,renew,rootId);return runJournal(progress,prepared.manifest.epoch,renew);});
+ if(config.protocol===2){
+  // An idle check must not rewrite lease.json, the notebook or its backup.
+  // Read immutable journal names first; acquire the writer lease only for work.
+  if(!mode){
+   const snapshot=await syncApi<Envelope>('local'),state=snapshot.sync;
+   if(state?.lastSync&&state.target===config.target&&!state.pending.length&&stable(project(snapshot.data))===stable(state.observed)){
+    const {manifest}=await readManifest(config.target);
+    if(manifest&&state.libraryId!==manifest.libraryId)throw Error('本机与云端不是同一资料库，请核对后接入。');
+    if(manifest&&(state.epoch||'legacy')===manifest.epoch){
+     const listing=await syncApi<{keys:string[]}>('remote',{action:'list',target:config.target,epoch:manifest.epoch}),received=new Set(state.received);
+     if(listing.keys.every(key=>received.has(key))){const latest=await syncApi<Envelope>('local');if(latest.version===snapshot.version&&(latest.syncRevision||0)===(snapshot.syncRevision||0))return latest;}
+    }
+   }
+  }
+  return withCloudLease(config.target,async renew=>{const prepared=await prepareDesktopSync(config.target,mode,renew,rootId);return runJournal(progress,prepared.manifest.epoch,renew,config.target);});
+ }
  return runJournal(progress);
 }
-async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy',renew?:()=>Promise<void>):Promise<Envelope>{
+async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy',renew?:(force?:boolean)=>Promise<void>,expectedTarget?:string):Promise<Envelope>{
  const config=await syncApi<{target:string;configured:boolean;verified?:boolean;deviceName?:string;protocol?:number}>('identity');
  let snapshot=await syncApi<Envelope>('local'),state=snapshot.sync||newSyncState();
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
- if(state.target&&state.target!==config.target)throw Error('连接的资料库已改变，请在连接设置中处理。');
+ if((expectedTarget&&expectedTarget!==config.target)||(state.target&&state.target!==config.target))throw Error('连接的资料库已改变，请在连接设置中处理。');
  const protocol=config.protocol===2?await readManifest(config.target):null;
+ if(config.protocol===2&&(!protocol?.manifest||protocol.manifest.epoch!==epoch))throw Error('云端资料库基准刚有变化，请重新同步。');
  state=capture({...state,...(protocol?.manifest?{libraryId:protocol.manifest.libraryId,epoch}:{}),target:config.target,...(config.deviceName?{deviceName:config.deviceName}:{})},snapshot.data);
  // Keep the queue durable before network access. The binding remains provisional
  // until a PUT is acknowledged or remote records are successfully incorporated.
@@ -58,6 +75,7 @@ async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy'
   await updateSync(current=>{if(current.target!==config.target)throw Error('同步连接已变化。');return {...current,published:[...new Set([...(current.published||[]),key])]};});
   received.add(key);
  }
+ await renew?.(true);
  for(let attempt=0;attempt<5;attempt++){
   const current=await syncApi<Envelope>('local');if(current.sync?.target!==config.target)throw Error('同步连接已变化。');
   let next=capture(current.sync,current.data);
@@ -70,17 +88,23 @@ async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy'
 }
 export async function syncBooks(snapshot:Envelope,progress?:(progress:SyncProgress)=>void):Promise<Envelope>{
  const books=snapshot.data.libraryBooks.filter(book=>book.storedFile&&['pdf','epub'].includes(book.format));
- const errors:Record<string,string>={};let uploaded=0,completed=books.filter(book=>!!book.cloudFile).length;
+ const errors:Record<string,string>={};let uploaded=0,completed=0,transferred=0;
  for(const book of books){
-  if(book.cloudFile)continue;
-  progress?.({stage:'books',message:'正在上传《'+book.title+'》',completed,total:books.length});
   try{
    const local=await syncApi<{available:boolean}>('book',{action:'status',id:book.id});
-   if(!local.available){errors[book.id]='本机没有原文件，请在有原书的设备同步。';continue;}
-   await syncApi('book',{action:'upload',target:snapshot.sync?.target,id:book.id});completed++;uploaded++;
-  }catch(error){errors[book.id]=error instanceof Error?error.message:'书籍上传未完成';if([401,403,429,503].includes((error as {code?:number}).code||0))break;}
+   if(book.cloudFile){
+    if(!local.available){progress?.({stage:'books',message:'正在下载《'+book.title+'》',completed,total:books.length});await syncApi('book',{action:'download',target:snapshot.sync?.target,id:book.id});transferred++;}
+   }else{
+    if(!local.available){errors[book.id]='原件尚未上传，请先在有原书的设备同步。';continue;}
+    progress?.({stage:'books',message:'正在上传《'+book.title+'》',completed,total:books.length});
+    await syncApi('book',{action:'upload',target:snapshot.sync?.target,id:book.id});uploaded++;transferred++;
+   }
+   completed++;
+  }catch(error){errors[book.id]=error instanceof Error?error.message:'书籍传输未完成';if([401,403,429,503,507].includes((error as {code?:number}).code||0)){for(const remaining of books.slice(books.indexOf(book)+1))errors[remaining.id]='连接暂不可用，请稍后重试。';break;}}
  }
- const updated=await updateSync(state=>({...state,books:{errors,lastChecked:new Date().toISOString()}}));
+ // Read the latest store: uploads may have committed cloudFile in the meantime.
+ const latest=await syncApi<Envelope>('local');if(latest.sync?.target!==snapshot.sync?.target)throw Error('同步连接已变化，书籍检查已停止。');
+ const updated=transferred||stable(latest.sync?.books?.errors||{})!==stable(errors)?await updateSync(state=>{if(state.target!==snapshot.sync?.target)throw Error('同步连接已变化，书籍检查已停止。');return {...state,books:{errors,lastChecked:new Date().toISOString()}};}):latest;
  // Publish successful book manifests even when a different book failed.
  return uploaded?syncNow(progress):updated;
 }

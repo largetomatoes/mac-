@@ -80,7 +80,7 @@ String child=path.substring(folder.length());if(Pattern.compile("<(?:[\\w-]+:)?c
         if(action.equals("control-get")||action.equals("control-put")){
             String key=input.optString("key");if(!key.equals("library.json")&&!key.equals("lease.json"))throw new IOException("同步控制文件无效");
             if(action.equals("control-get")){try(Response r=request("GET",ROOT+key,null)){if(r.code()==404)return new JSONObject().put("text",JSONObject.NULL).put("etag",JSONObject.NULL);success(r);return new JSONObject().put("text",new String(read(r.body().byteStream(),65536),StandardCharsets.UTF_8)).put("etag",r.header("ETag")==null?JSONObject.NULL:r.header("ETag"));}}
-            byte[] body=input.getString("text").getBytes(StandardCharsets.UTF_8);if(body.length>65536)throw new IOException("同步控制内容过大");ensure(null);String etag=input.optString("etag","");if(etag.equals("null"))etag="";
+            byte[] body=input.getString("text").getBytes(StandardCharsets.UTF_8);if(body.length>65536)throw new IOException("同步控制内容过大");String etag=input.optString("etag","");if(etag.equals("null"))etag="";if(etag.isEmpty())ensure(null);
             try(Response r=request("PUT",ROOT+key,RequestBody.create(body,MediaType.get("application/json")),etag.isEmpty()?"If-None-Match":"If-Match",etag.isEmpty()?"*":etag)){success(r);}return new JSONObject().put("ok",true);
         }
         if(action.equals("check")){
