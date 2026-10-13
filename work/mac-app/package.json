@@ -1,7 +1,7 @@
 {
   "name": "wenjian-mac",
-  "version": "3.0.0",
-  "releaseVersion": "3.00",
+  "version": "3.1.0",
+  "releaseVersion": "3.01",
   "private": true,
   "description": "问间桌面笔记应用",
   "main": "main.js",

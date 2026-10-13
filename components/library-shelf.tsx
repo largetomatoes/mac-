@@ -89,6 +89,12 @@ export function LibraryShelf({data,mode,onChooseLibrary,activeId,selectedFolder,
   setCollapsedCollections(previous=>{const next=new Set(previous);if(next.has(id))next.delete(id);else next.add(id);return next;});
  }
 
+ function selectCollection(id:string|null){
+  onCollectionChange(id);
+  setFolderDrawerOpen(false);
+  setQuery('');
+ }
+
  function selectFolder(id:string|null){
   onFolderChange(id);
   setFolderDrawerOpen(false);
@@ -136,26 +142,27 @@ export function LibraryShelf({data,mode,onChooseLibrary,activeId,selectedFolder,
   <DialogDescription className="sr-only">{isZotero?'浏览从 Zotero 同步的文献和分类，选择文献开始阅读。':'按文件夹整理书籍，选择一本书开始阅读。'}</DialogDescription>
   {isZotero&&zoteroStatus&&<section className="folder-shelf-zotero" aria-label="Zotero 联动状态" data-state={zoteroStatus.state}><div role="status" title={zoteroStatus.message}><span className="folder-zotero-indicator"/>{zoteroStatus.state==='connecting'?'正在更新 Zotero':zoteroStatus.state==='connected'?`Zotero 已连接${typeof zoteroStatus.items==='number'?` · ${zoteroStatus.items} 篇`:''}`:zoteroStatus.state==='offline'?'Zotero 未连接':'Zotero 更新未完成'}</div>{onRefreshZotero&&<Button type="button" variant="ghost" size="icon-xs" aria-label="更新 Zotero 文献与摘录" title={zoteroStatus.lastSyncedAt?`上次更新：${new Date(zoteroStatus.lastSyncedAt).toLocaleString('zh-CN')}，点击再次更新`:'更新 Zotero 文献与摘录'} disabled={zoteroStatus.state==='connecting'||busy} onClick={onRefreshZotero}><RefreshCw className={zoteroStatus.state==='connecting'?'spin':undefined}/></Button>}{zoteroStatus.message&&zoteroStatus.state!=='connected'&&<p>{zoteroStatus.message}</p>}</section>}
   <div className="folder-shelf-search"><Search aria-hidden="true"/><Input aria-label={isZotero?'搜索文献或作者':'搜索书名或作者'} placeholder={isZotero?'搜索文献或作者':'搜索书名或作者'} value={query} onChange={event=>setQuery(event.target.value)}/>{query&&<Button type="button" variant="ghost" size="icon-xs" aria-label={isZotero?'清除文献搜索':'清除书籍搜索'} onClick={()=>setQuery('')}><X/></Button>}</div>
-  {isZotero?<section className="folder-shelf-folders folder-shelf-collections" aria-label="Zotero 分类">
-   <div className="folder-shelf-section-heading"><span>分类</span><small>来自 Zotero</small></div>
-   <nav aria-label="选择 Zotero 分类">
-    <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveCollection===null} onClick={()=>onCollectionChange(null)}><Library aria-hidden="true"/><span>全部文献</span><small>{modeBooks.length}</small></button></div>
-    <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveCollection===''} onClick={()=>onCollectionChange('')}><BookOpen aria-hidden="true"/><span>未分类</span><small>{uncategorized}</small></button></div>
-    <CollectionBranch nodes={collections} selected={effectiveCollection} onSelect={onCollectionChange} collapsed={collapsedCollections} onToggle={toggleCollection}/>
-   </nav>
-  </section>:<section className="folder-shelf-picker" aria-label="图书分类">
+  <section className="folder-shelf-picker" aria-label={isZotero?'Zotero 分类':'图书分类'}>
    <Popover open={folderDrawerOpen} onOpenChange={setFolderDrawerOpen}>
-    <PopoverTrigger asChild><button type="button" className="folder-shelf-drawer-trigger" aria-label={`切换图书文件夹，当前${selectedName}`} title={selectedName}>{effectiveFolder===null?<Library aria-hidden="true"/>:<Folder aria-hidden="true"/>}<span>{selectedName}</span><small>{folderBooks.length} 本</small><ChevronDown aria-hidden="true"/></button></PopoverTrigger>
-    <PopoverContent className="folder-shelf-drawer" align="start" sideOffset={5} collisionPadding={12} aria-label="图书文件夹抽屉">
-   <div className="folder-shelf-section-heading"><span>文件夹 · {folders.length}</span><div><Button type="button" variant="ghost" size="icon-xs" aria-label="新建图书文件夹" title="新建文件夹" disabled={busy} onClick={()=>start({kind:'create'})}><FolderPlus/></Button><Button type="button" variant="ghost" size="icon-xs" aria-label="收起文件夹抽屉" title="收起文件夹" onClick={()=>setFolderDrawerOpen(false)}><X/></Button></div></div>
+    <PopoverTrigger asChild><button type="button" className="folder-shelf-drawer-trigger" aria-label={`${isZotero?'切换 Zotero 分类':'切换图书文件夹'}，当前${selectedName}`} title={selectedName}>{(isZotero?effectiveCollection:effectiveFolder)===null?<Library aria-hidden="true"/>:<Folder aria-hidden="true"/>}<span>{selectedName}</span><small>{folderBooks.length} {isZotero?'篇':'本'}</small><ChevronDown aria-hidden="true"/></button></PopoverTrigger>
+    <PopoverContent className="folder-shelf-drawer" align="start" sideOffset={5} collisionPadding={12} aria-label={isZotero?'Zotero 分类抽屉':'图书文件夹抽屉'}>
+     <div className="folder-shelf-section-heading"><span>{isZotero?`分类 · ${allCollections.length}`:`文件夹 · ${folders.length}`}</span><div>{isZotero?<small>来自 Zotero</small>:<Button type="button" variant="ghost" size="icon-xs" aria-label="新建图书文件夹" title="新建文件夹" disabled={busy} onClick={()=>start({kind:'create'})}><FolderPlus/></Button>}<Button type="button" variant="ghost" size="icon-xs" aria-label={isZotero?'收起 Zotero 分类抽屉':'收起文件夹抽屉'} title="收起抽屉" onClick={()=>setFolderDrawerOpen(false)}><X/></Button></div></div>
+     {isZotero?(
+   <nav aria-label="选择 Zotero 分类">
+    <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveCollection===null} onClick={()=>selectCollection(null)}><Library aria-hidden="true"/><span>全部文献</span><small>{modeBooks.length}</small></button></div>
+    <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveCollection===''} onClick={()=>selectCollection('')}><BookOpen aria-hidden="true"/><span>未分类</span><small>{uncategorized}</small></button></div>
+    <CollectionBranch nodes={collections} selected={effectiveCollection} onSelect={selectCollection} collapsed={collapsedCollections} onToggle={toggleCollection}/>
+   </nav>
+     ):(
    <nav aria-label="选择图书文件夹">
     <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveFolder===null} onClick={()=>selectFolder(null)}><Library aria-hidden="true"/><span>全部图书</span><small>{modeBooks.length}</small></button></div>
     <div className="folder-shelf-folder-row"><button type="button" className="folder-shelf-folder" aria-pressed={effectiveFolder===''} onClick={()=>selectFolder('')}><BookOpen aria-hidden="true"/><span>未分类</span><small>{uncategorized}</small></button></div>
     {folders.map(folder=><div className="folder-shelf-folder-row" key={folder.id} data-selected={effectiveFolder===folder.id}><button type="button" className="folder-shelf-folder" aria-pressed={effectiveFolder===folder.id} title={folder.name} onClick={()=>selectFolder(folder.id)}><Folder aria-hidden="true"/><span>{folder.name}</span><small>{folderCounts.get(folder.id)||0}</small></button><div className="folder-shelf-folder-actions"><Button type="button" variant="ghost" size="icon-xs" aria-label={`重命名文件夹 ${folder.name}`} title="重命名" disabled={busy} onClick={()=>start({kind:'rename',id:folder.id})}><Pencil/></Button><Button type="button" variant="ghost" size="icon-xs" aria-label={`移除文件夹 ${folder.name}`} title="移除文件夹" disabled={busy} onClick={()=>start({kind:'remove',id:folder.id})}><Trash2/></Button></div></div>)}
    </nav>
+     )}
     </PopoverContent>
    </Popover>
-  </section>}
+  </section>
   <section className="folder-shelf-books" aria-label={`${selectedName}中的${isZotero?'文献':'图书'}`}>
    <div className="folder-shelf-book-heading"><span title={selectedName}>{selectedName}</span><small>{query.trim()?`${books.length} / ${folderBooks.length}`:folderBooks.length} {isZotero?'篇':'本'}</small></div>
    <div className="folder-shelf-book-list">
