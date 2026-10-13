@@ -23,6 +23,18 @@
 .folder-shelf-section-heading>small{font-size:10px;color:#99a18f}
 .folder-shelf-collections>.folder-shelf-section-heading{min-height:26px;padding-right:8px}
 .folder-shelf-folders nav{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.folder-shelf-picker{flex-shrink:0;padding:0 12px 10px;border-bottom:1px solid #dce2d8}
+.folder-shelf-drawer-trigger{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:9px 10px;border:1px solid #dce2d8;border-radius:7px;background:#e8ede4;color:#3f5742;text-align:left;font-size:12px;cursor:pointer}
+.folder-shelf-drawer-trigger>svg{width:14px;height:14px;flex-shrink:0}
+.folder-shelf-drawer-trigger>svg:last-child{width:12px;height:12px;color:#819078}
+.folder-shelf-drawer-trigger>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.folder-shelf-drawer-trigger>small{flex-shrink:0;font-size:10px;color:#819078}
+.folder-shelf-drawer-trigger:hover,.folder-shelf-drawer-trigger[data-state=open]{background:#dfe7d9}
+.folder-shelf-drawer-trigger:focus-visible{outline:2px solid #8ca080;outline-offset:2px}
+.folder-shelf-drawer[data-slot=popover-content]{display:flex;flex-direction:column;width:min(310px,calc(100vw - 24px));max-height:min(420px,var(--radix-popover-content-available-height));padding:10px;background:#f7f9f4;border-color:#d8e0d2;box-shadow:0 10px 30px #263f2826;color:#4d5959}
+.folder-shelf-drawer .folder-shelf-section-heading>div{display:flex;gap:2px}
+.folder-shelf-drawer .folder-shelf-section-heading [data-slot=button]{color:#7c8877}
+.folder-shelf-drawer nav{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .folder-shelf-collection-branch{min-width:0;margin:0;padding:0;list-style:none}
 .folder-shelf-collection-branch .folder-shelf-collection-branch{padding-left:12px}
 .folder-shelf-collection-row>.folder-shelf-folder{padding-left:2px;gap:6px}
