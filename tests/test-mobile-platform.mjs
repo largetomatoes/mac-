@@ -5,6 +5,8 @@ import test from 'node:test';
 import {webcrypto} from 'node:crypto';
 import ts from 'typescript';
 import ocrCache from '../lib/ocr-cache.cjs';
+import settings from '../lib/notebook-settings.cjs';
+import maintenance from '../lib/maintenance.cjs';
 
 // Run the production API adapter and normalizer. Only native storage, network
 // transfer and the reader's platform registration are replaced at their edges.
@@ -33,7 +35,7 @@ function device(){
  const window={fetch:async()=>{throw Error('unexpected external request');}};
  state.module=load('mobile/platform.ts',{
   '@capacitor/app':{App:{}},'@capacitor/core':{Capacitor:{isNativePlatform:()=>true,convertFileSrc:uri=>uri},registerPlugin:name=>{assert.equal(name,'WenjianStorage');return native;}},
-  '../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
+  '../lib/notebook-settings.cjs':settings,'../lib/maintenance.cjs':maintenance,'../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
   '../lib/reader-platform':{setReaderPlatform:platform=>{state.reader=platform;}},
  },{window,location:{origin:'https://localhost'}});
  state.module.installMobileApi();
@@ -126,3 +128,5 @@ test('mobile book availability rejects missing, empty and size-mismatched origin
  assert.equal(await phone.module.mobileBookAvailable(original),true,'local imports can be available before they have cloud metadata');
  assert.equal(phone.writes.length,0);assert.equal(phone.transfers.length,0,'availability probes must not start a transfer');
 });
+
+test('mobile reading view avoids copying sync history while native history remains intact',async()=>{const phone=device(),full=await phone.module.mobileSnapshot(),view=await phone.module.mobileViewSnapshot();assert.equal(view.sync,undefined);assert.deepEqual(view.data,full.data);assert.deepEqual(JSON.parse(JSON.stringify(phone.store.sync)),full.sync);assert.deepEqual((await phone.module.mobileSnapshot()).sync,full.sync);assert.equal(phone.writes.length,0);});

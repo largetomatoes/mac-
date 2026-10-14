@@ -18,7 +18,7 @@ function load(file,imports={}) {
 const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts')});
 const {mergeZoteroCatalog,zoteroIdentity,isReadingBook,libraryBooksForMode,collectionIdentity,zoteroCollectionTree,libraryBooksForZoteroCollection}=load('lib/zotero.ts',{'./notebook':notebook});
 const deletion=load('lib/deletion.ts',{'./notebook':notebook});
-const same=(a,b,message)=>assert.equal(JSON.stringify(a),JSON.stringify(b),message);
+const same=(a,b,message)=>assert.deepEqual(JSON.parse(JSON.stringify(a)),JSON.parse(JSON.stringify(b)),message);
 const annotation={key:'ANN00001',type:'highlight',text:'原文',comment:'在 Zotero 写下的批注',pageLabel:'十二',page:15,position:'{"pageIndex":14}',color:'#ffd400',at:'2026-09-28T00:00:00Z',modifiedAt:'2026-09-28T01:00:00Z',attachmentKey:'ATT00001'};
 const item={itemKey:'ITEM0001',itemVersion:12,itemType:'book',title:'现代资本主义',author:'桑巴特',format:'pdf',storedFile:'original.pdf',originalName:'现代资本主义.pdf',addedAt:'2026-09-28T00:00:00Z',attachmentKey:'ATT00001',date:'1902',publisher:'出版社',doi:'10.1/example',isbn:'1234567890',collections:['COLL0002','COLL0001'],annotations:[annotation],sourceAvailable:true};
 const catalog={serverId:'local-library-1',library:'users/0',items:[item],collections:[],warnings:[],connected:true};
@@ -32,7 +32,7 @@ assert.equal(linked.added,0);
 assert.equal(linked.updated,1);
 assert.equal(linked.data.libraryBooks.length,1,'same confirmed original attaches to the existing book');
 const book=linked.data.libraryBooks[0];
-same({...book,zotero:undefined,inReadingLibrary:undefined},local,'existing book name, ID, progress and folder remain unchanged');
+same({...book,display:undefined,zotero:undefined,inReadingLibrary:undefined},local,'existing book name, ID, progress and folder remain unchanged');
 assert.equal(book.zotero.title,item.title);
 assert.equal(book.zotero.annotations[0].comment,annotation.comment);
 assert.equal(linked.data.readingNotes,data.readingNotes,'source comments never become personal interpretations');
@@ -202,3 +202,8 @@ await put({...persistent,libraryBooks:persistent.libraryBooks.map(entry=>({...en
 await put({...persistent,libraryBooks:persistent.libraryBooks.map(entry=>({...entry,inReadingLibrary:null}))},400);
 await put({...withReference,libraryBooks:withReference.libraryBooks.map(entry=>entry.id===reference.id?{...entry,format:'pdf'}:entry)},400);
 console.log('PASS: Zotero merge, reading/source membership, collection snapshots and hierarchy, cycle safety, preserved local work, repeated sync and API persistence');
+
+assert.equal(notebook.displayBook(linked.data.libraryBooks[0]).title,local.title);assert.equal(notebook.displayBook(linked.data.libraryBooks[0]).author,local.author);
+const freshSource=mergeZoteroCatalog(empty,catalog).data;const refreshedSource=mergeZoteroCatalog(freshSource,{...catalog,items:[{...item,title:'来源更新名称',author:'来源更新作者',itemVersion:14}]}).data;
+const normalizedSource=notebook.normalize(JSON.parse(JSON.stringify(refreshedSource)));assert.equal(notebook.displayBook(normalizedSource.libraryBooks[0]).title,'来源更新名称');assert.equal(notebook.displayBook(normalizedSource.libraryBooks[0]).author,'来源更新作者');
+console.log('PASS: legacy local display metadata survives linking; modern source metadata remains updated after reload');

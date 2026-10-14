@@ -66,7 +66,7 @@ export function layoutGraph(data:GraphData,projection:GraphProjection):Record<st
    }
   });
  };
- if(visible.has(ROOT))placeTree(build(ROOT),0,0);
+ const rootId=data.notes.find(note=>!note.parent)?.id||ROOT;if(visible.has(rootId))placeTree(build(rootId),0,0);
  // Preserve orphaned boards and malformed cycles as visible islands, never drop data.
  for(const note of data.notes){
   if(placed.has(note.id)||crossIds.has(note.parent||''))continue;

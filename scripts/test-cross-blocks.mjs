@@ -1,3 +1,4 @@
+import ocrCache from '../lib/ocr-cache.cjs';
 import settings from '../lib/notebook-settings.cjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -28,7 +29,7 @@ const DB={prepare(sql){
   };
  }};
 }};
-const api=load('app/api/notebook/route.ts',{'@/lib/notebook-settings.cjs':settings,'@/lib/deletion':deletion,'@/lib/notebook':notebook,'cloudflare:workers':{env:{DB}},zod:{z}});
+const api=load('app/api/notebook/route.ts',{'@/lib/ocr-cache.cjs':ocrCache,'@/lib/notebook-settings.cjs':settings,'@/lib/deletion':deletion,'@/lib/notebook':notebook,'cloudflare:workers':{env:{DB}},zod:{z}});
 const read=()=>JSON.parse(state.content);
 async function put(data,expected=200,version=state.version){const r=await api.PUT(new Request('http://test/api/notebook',{method:'PUT',body:JSON.stringify({data,version})}));assert.equal(r.status,expected,await r.text());}
 const legacy=structuredClone(fixture);

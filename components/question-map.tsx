@@ -17,13 +17,14 @@ function boundary(from: GraphPosition, to: GraphPosition) {
   return { x: from.x + GRAPH_NODE_WIDTH / 2 + dx * amount, y: from.y + GRAPH_NODE_HEIGHT / 2 + dy * amount };
 }
 
-export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, onAddRoot, mobile = false }: { data: Notebook; loading: boolean; onOpen: (id: string) => void; onAddRoot?: () => void; mobile?: boolean }) {
+export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, onAddRoot, rootId = ROOT, viewKey = 'page-world', mobile = false }: { data: Notebook; loading: boolean; onOpen: (id: string) => void; onAddRoot?: () => void; rootId?:string;viewKey?:string;mobile?: boolean }) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const initialized = useRef(false);
-  const cameraRef = useRef(initialCamera);
+  const savedCamera = useMemo(()=>{try{const value=JSON.parse(localStorage.getItem('wenjian-camera:'+viewKey)||'null');return value&&[value.x,value.y,value.zoom].every(Number.isFinite)&&value.zoom>0?value as GraphCamera:null;}catch{return null;}},[viewKey]);
+  const initialized = useRef(!!savedCamera);
+  const cameraRef = useRef(savedCamera||initialCamera);
   const frameRef = useRef<number | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; camera: GraphCamera } | null>(null);
-  const [camera, setCamera] = useState(initialCamera);
+  const [camera, setCamera] = useState(savedCamera||initialCamera);
   const [viewport, setViewport] = useState({ width: 900, height: 650 });
   const [dragging, setDragging] = useState(false);
   const touches = useRef(new Map<number, { x: number; y: number }>());
@@ -37,7 +38,7 @@ export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, on
   const items = useMemo(() => {
     const visible = new Set(projection.visibleIds);
     return [
-      ...data.notes.map(note => ({ id: note.id, text: note.title, kind: note.kind, label: note.id === ROOT ? '核心问题' : note.kind === 'question' ? numberOf(note, data.notes, data.crossThoughts) : '回答' })),
+      ...data.notes.map(note => ({ id: note.id, text: note.title, kind: note.kind, label: note.id === rootId ? '核心问题' : note.kind === 'question' ? numberOf(note, data.notes, data.crossThoughts) : '回答' })),
       ...data.crossThoughts.map(cross => ({ id: cross.id, text: cross.title || cross.text || '交叉思考', kind: 'cross', label: `${crossNumber(cross)}〔${crossSignature(cross, data)}〕` })),
       ...data.cards.map(card => ({ id: card.id, text: card.text, kind: 'card', label: '卡片' })),
     ].filter(item => visible.has(item.id));
@@ -52,9 +53,9 @@ export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, on
     cameraRef.current = next;
     if (frameRef.current === null) frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null;
-      setCamera(cameraRef.current);
+      setCamera(cameraRef.current);try{localStorage.setItem('wenjian-camera:'+viewKey,JSON.stringify(cameraRef.current));}catch{}
     });
-  }, []);
+  }, [viewKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,9 +81,9 @@ export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, on
   }, [moveCamera, mobile]);
 
   useEffect(() => {
-    if (initialized.current || loading || !positions[ROOT] || viewport.height <= 0) return;
+    if (initialized.current || loading || !positions[rootId] || viewport.height <= 0) return;
     initialized.current = true;
-    const root = positions[ROOT];
+    const root = positions[rootId];
     const rect = canvasRef.current?.getBoundingClientRect();
     moveCamera(mobile ? fitGraph(bounds, rect && rect.width > 0 && rect.height > 0 ? { width: rect.width, height: rect.height } : viewport) : { x: 40 - root.x, y: viewport.height / 2 - root.y - GRAPH_NODE_HEIGHT / 2, zoom: 1 });
   }, [loading, positions, viewport, moveCamera, mobile, bounds]);
@@ -167,7 +168,7 @@ export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, on
           const position = positions[item.id];
           if (!position) return null;
           return <g key={item.id} data-node={item.id} role="button" tabIndex={0} aria-label={`${item.label}：${item.text}`}
-            className={`map-node ${item.kind}${item.id === ROOT ? ' root-node' : ''}`} transform={`translate(${position.x} ${position.y})`}
+            className={`map-node ${item.kind}${item.id === rootId ? ' root-node' : ''}`} transform={`translate(${position.x} ${position.y})`}
             onClick={() => { if (Date.now() > ignoreClickUntil.current) onOpen(item.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(item.id); } }}>
             <title>{item.label} · {item.text}</title>
             <rect className="node-surface" width={GRAPH_NODE_WIDTH} height={GRAPH_NODE_HEIGHT} rx="10" />
@@ -183,7 +184,7 @@ export const QuestionMap = memo(function QuestionMap({ data, loading, onOpen, on
       <button type="button" className="map-zoom-value" aria-label="恢复百分之百大小" title="恢复 100%" onClick={() => resize(1)}>{Math.round(camera.zoom * 100)}%</button>
       <Button variant="ghost" size="icon" aria-label="放大关系图" title="放大" onClick={() => resize(cameraRef.current.zoom * 1.2)}><Plus /></Button>
       <Button variant="ghost" size="icon" aria-label="查看全图" title="查看全图" onClick={() => moveCamera(fitGraph(bounds, viewport))}><Maximize /></Button>
-      {mobile && <button type="button" onClick={() => { const root = positions[ROOT]; if (root) moveCamera({ zoom: 1, x: viewport.width / 2 - root.x - GRAPH_NODE_WIDTH / 2, y: viewport.height / 2 - root.y - GRAPH_NODE_HEIGHT / 2 }); }}>核心</button>}
+      {mobile && <button type="button" onClick={() => { const root = positions[rootId]; if (root) moveCamera({ zoom: 1, x: viewport.width / 2 - root.x - GRAPH_NODE_WIDTH / 2, y: viewport.height / 2 - root.y - GRAPH_NODE_HEIGHT / 2 }); }}>核心</button>}
     </div>
   </div>;
 });

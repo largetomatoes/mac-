@@ -17,3 +17,9 @@ for(const [platform,arch,suffix] of [['android','universal','Android.apk'],['dar
  assert.equal(selectUpdate([{...release,assets:[]}],{version:'2.4.2',platform,arch}).state,'missing');
 }
 console.log('PASS: 3.00 and canonical version comparison, all three platform asset links and missing-package handling');
+
+assert.equal(compareVersions('3.1','3.01'),1);
+const sequence=['3.1','3.14','3.141','3.1415','3.14159','3.141592','3.1415926'];
+for(let i=1;i<sequence.length;i++){assert.equal(compareVersions(sequence[i],sequence[i-1]),1);assert.equal(module.exports.nextPiVersion(sequence[i-1]),sequence[i]);}
+assert.equal(versionParts('3.142'),null);
+console.log('PASS: pi-prefix release progression and legacy 3.01 ordering');

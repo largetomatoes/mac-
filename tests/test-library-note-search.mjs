@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';import {load,plain} from './load-ts.cjs';
+const {libraryNoteIndex,searchLibraryNotes,matchesNoteText,zoteroAnnotationChapter}=load('lib/library-note-search.ts');
+const {initialNotebook}=load('lib/notebook.ts');
+const book=(id,title)=>({id,title,author:'作者',display:{title:'显示'+title},format:'pdf',storedFile:id+'.pdf',originalName:id+'.pdf',addedAt:'2026-01-01',progress:{},pdfChapters:[{id:'c1',title:'第一章',startPage:1},{id:'c2',title:'第二章',startPage:10}]});
+const process={id:'r1',libraryBookId:'a',book:'旧书名',author:'',chapter:'第一章',locator:'第 2 页',quote:'保留引用的原话',interpretation:'共同线索',questionIds:[],at:'2026-01-01',thoughts:[{id:'t1',text:'后来补充细节',reason:'重新读过之后',origin:'自己的思考',at:'2026-01-02'}]};
+const shared={id:'s1',libraryBookId:'a',bookTitle:'旧书名',scope:'location',text:'共同线索',locator:'',at:'2026-01-01',questionIds:[],thoughts:[],sources:[{id:'x1',libraryBookId:'a',bookTitle:'书甲',chapter:'第一章',locator:'第 3 页',quote:'来源甲'}, {id:'x2',libraryBookId:'a',bookTitle:'书甲',chapter:'第二章',locator:'第 11 页',quote:'来源甲二'}, {id:'x3',libraryBookId:'b',bookTitle:'书乙',chapter:'第二章',locator:'第 12 页',quote:'来源乙'}]};
+const a=book('a','书甲'),b=book('b','书乙');b.zotero={attachmentKey:'att',annotations:[{key:'z1',attachmentKey:'att',text:'外部摘录',comment:'共同线索',page:12,pageLabel:'12',position:'{}',at:'2026-01-01'},{key:'hidden',attachmentKey:'att',text:'不应出现',comment:'共同线索',at:'2026-01-01'}]};b.hiddenZoteroAnnotations=['att:hidden'];
+const data={...plain(initialNotebook),libraryBooks:[a,b],readingNotes:[process],bookThoughts:[shared,{...shared,id:'whole',scope:'book',sources:undefined,chapter:'',text:'全书判断'}],thoughtReplies:[{id:'reply',thoughtId:'t1',text:'对话里才出现的词语',at:'2026-01-03'}]};
+const original=JSON.stringify(data),index=libraryNoteIndex(data),all=new Set(['a','b']);
+assert.equal(searchLibraryNotes(index,'共同线索',all).length,5,'process + three shared locations + visible Zotero');
+assert.equal(searchLibraryNotes(index,'对话里才出现',all)[0].id,'r1');assert.equal(searchLibraryNotes(index,'后来补充',all)[0].id,'r1');assert.equal(searchLibraryNotes(index,'重新读过',all)[0].id,'r1');
+assert.equal(searchLibraryNotes(index,'共同线索',new Set(['b'])).length,2,'only current shelf scope');assert.equal(searchLibraryNotes(index,'共同线索',all,'chapter:第二章').length,3);
+assert.equal(searchLibraryNotes(index,'全书判断',all)[0].chapter,'全书思考');assert.equal(searchLibraryNotes(index,'',all).length,0);
+assert(index.every(hit=>hit.bookTitle.startsWith('显示')));assert(!index.some(hit=>hit.id==='hidden'));assert.equal(zoteroAnnotationChapter(b,{position:'{"pageIndex":11}'}),'第二章');
+assert(matchesNoteText('English Words 诚实','english 诚实'));assert(!matchesNoteText('English','english 缺失'));
+assert.equal(JSON.stringify(data),original,'search never mutates notes or source metadata');
+console.log('PASS: source IDs, display names, process notes, later thoughts/replies, shared multi-book chapters, scope filtering, Zotero exclusions, full-book/unknown chapters and immutable originals');

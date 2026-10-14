@@ -3,11 +3,11 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 function load(file,imports){const module={exports:{}};const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(code,{module,exports:module.exports,require:name=>imports[name],console,crypto:{randomUUID:()=>String(Math.random())}});return module.exports;}
-const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts',{})}),materials=load('lib/manuscript-materials.ts',{'./notebook':notebook});
+const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts',{})}),materials=load('lib/manuscript-materials.ts',{'./notebook':notebook,'./book-notebook':load('lib/book-notebook.ts',{})});
 const document=load('lib/manuscript-document.ts',{'./notebook':notebook,'./manuscript-materials':materials});
 const deletion=load('lib/deletion.ts',{'./notebook':notebook});
-const exported=load('lib/read-only-export.ts',{'./notebook':notebook});
-const data=structuredClone(notebook.initialNotebook),template=data.notes[1];
+const exported=load('lib/read-only-export.ts',{'./notebook':notebook,'./book-notebook':load('lib/book-notebook.ts',{})});
+const data=structuredClone(notebook.initialNotebook),template=data.notes[0];data.setupCompleted=true;data.notes.push({...template,id:'language',parent:'world',order:1,title:'语言问题',revisions:[],thoughts:[]});
 data.notes[1].body='  保留原话。\n第二行。  ';
 data.notes[1].thoughts=[{id:'t1',text:'后来想到的另一种可能。',at:'2026-01-02T00:00:00Z',origin:'自己的思考',reason:'重新理解材料'}];
 data.thoughtReplies=[{id:'reply',thoughtId:'t1',text:'对这条思考的回答。',at:'2026-01-03T00:00:00Z'}];

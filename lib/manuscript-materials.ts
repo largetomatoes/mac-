@@ -1,5 +1,5 @@
 import {thoughtSources,thoughtPrimary,sourceLabel} from './book-notebook';
-import {type Notebook,type ManuscriptLink,type Thought,ROOT,numberOf,crossNumber,crossSignature} from './notebook';
+import {type Notebook,type ManuscriptLink,type Thought,displayBook,pagesOf,numberOf,crossNumber,crossSignature} from './notebook';
 
 export type MaterialKind='heading'|'original'|'quote'|'understanding'|'thought'|'reply';
 export type ManuscriptSourceSnapshot={
@@ -9,7 +9,7 @@ export type ManuscriptSourceSnapshot={
  origin?:string; reason?:string;
 };
 export type ManuscriptBlock={id:string;kind:'paragraph'|'heading'|'quote';text:string;source?:ManuscriptSourceSnapshot;links?:ManuscriptLink[]};
-export type MaterialScope={id:string;kind:'question'|'cross'|'card'|'book';label:string};
+export type MaterialScope={id:string;kind:'question'|'cross'|'card'|'book'|'chapter';label:string;parentId?:string};
 export type Material=ManuscriptSourceSnapshot&{scopeIds:string[]};
 export type MaterialCatalog={scopes:MaterialScope[];materials:Material[]};
 export const materialKindLabel:Record<MaterialKind,string>={heading:'标题',original:'最初记录',quote:'引用原文',understanding:'自己的理解',thought:'后来想到的',reply:'我的回答'};
@@ -25,8 +25,9 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
   return result;
  };
  const addScope=(scope:MaterialScope)=>{if(!scopes.some(item=>item.id===scope.id))scopes.push(scope);};
+ const chapterScope=(bookId:string|undefined,title:string,chapter:string)=>{const id=bookScope(bookId,title)+':chapter:'+encodeURIComponent(chapter||'全书/未分章');addScope({id,kind:'chapter',label:chapter||'全书/未分章',parentId:bookScope(bookId,title)});return id;};
  const bookScope=(id:string|undefined,title:string)=>id?`book:${id}`:`book-title:${title}`;
- for(const book of data.libraryBooks)addScope({id:bookScope(book.id,book.title),kind:'book',label:book.title});
+ for(const original of data.libraryBooks){const book=displayBook(original);addScope({id:bookScope(book.id,book.title),kind:'book',label:book.title});}
  const readingBooks=[...data.readingNotes.map(item=>({id:item.libraryBookId,title:item.book})),...data.bookThoughts.flatMap(item=>thoughtSources(item).map(source=>({id:source.libraryBookId,title:source.bookTitle})))];
  for(const book of readingBooks)addScope({id:bookScope(book.id,book.title),kind:'book',label:book.title});
  const add=(source:ManuscriptSourceSnapshot,scopeIds:string[])=>{if(source.text.trim())materials.push({...source,scopeIds:[...new Set(scopeIds)]});};
@@ -40,15 +41,15 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
  const visit=(id:string)=>{
   if(visited.has(id))return;visited.add(id);
   const note=notes.get(id);if(!note)return;
-  const label=`${id===ROOT?'核心问题':numberOf(note,data.notes,data.crossThoughts)} · ${note.title}`;
-  if(note.kind==='question')addScope({id:questionScope(id),kind:'question',label});
+  const label=`${!note.parent?'问题页':numberOf(note,data.notes,data.crossThoughts)} · ${note.title}`;
+  if(note.kind==='question')addScope({id:questionScope(id),kind:'question',label,...(note.parent?{parentId:questionScope(note.parent)}:{})});
   const scopeIds=scopeAncestors(id),context={label,citation:note.source,targetKind:'note' as const,targetId:id,origin:note.origin};
   add({...context,key:`note:${id}:title`,kind:'heading',text:note.title,at:''},scopeIds);
   add({...context,key:`note:${id}:body`,kind:'original',text:note.body,at:''},scopeIds);
   appendThoughts(note.thoughts||[],context,scopeIds);
   data.notes.filter(child=>child.parent===id).sort((a,b)=>a.order-b.order).forEach(child=>visit(child.id));
  };
- visit(ROOT);
+ for(const page of pagesOf(data))visit(page.rootId);
  for(const cross of [...data.crossThoughts].sort((a,b)=>a.order-b.order)){
   const label=`${crossNumber(cross)}〔${crossSignature(cross,data)}〕 · ${cross.title||'交叉思考'}`,scopeIds=[`cross:${cross.id}`];
   addScope({id:scopeIds[0],kind:'cross',label});
@@ -70,7 +71,7 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
  }
  for(const reading of data.readingNotes){
   const citation=[reading.book?`《${reading.book}》`:'',reading.author,reading.chapter,reading.locator].filter(Boolean).join(' · ');
-  const scopeIds=[...reading.questionIds.flatMap(scopeAncestors),bookScope(reading.libraryBookId,reading.book)];
+  const scopeIds=[...reading.questionIds.flatMap(scopeAncestors),bookScope(reading.libraryBookId,reading.book),chapterScope(reading.libraryBookId,reading.book,reading.chapter)];
   const context={label:`阅读笔记 · ${reading.book}`,citation,targetKind:'reading' as const,targetId:reading.id,libraryBookId:reading.libraryBookId,sourceLocation:reading.sourceLocation};
   add({...context,key:`reading:${reading.id}:quote`,kind:'quote',text:reading.quote,at:reading.at,origin:'引用原文'},scopeIds);
   add({...context,key:`reading:${reading.id}:interpretation`,kind:'understanding',text:reading.interpretation,at:reading.at,origin:'自己的理解'},scopeIds);
@@ -78,7 +79,7 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
  }
  for(const entry of data.bookThoughts){
   const sources=thoughtSources(entry),primary=thoughtPrimary(entry,data.libraryBooks)||sources[0];
-  const scopeIds=[...entry.questionIds.flatMap(scopeAncestors),...sources.map(source=>bookScope(source.libraryBookId,source.bookTitle))];
+  const scopeIds=[...entry.questionIds.flatMap(scopeAncestors),...sources.flatMap(source=>[bookScope(source.libraryBookId,source.bookTitle),chapterScope(source.libraryBookId,source.bookTitle,source.chapter||'')])];
   const citation=sources.map(sourceLabel).join(' ↔ ');
   const context={label:`${entry.sources?.length?'共同思考':'本书思考'} · ${sources.map(source=>source.bookTitle).join(' ↔ ')}`,citation,targetKind:'bookThought' as const,targetId:entry.id,libraryBookId:primary.libraryBookId,sourceLocation:primary.sourceLocation};
   for(const source of sources){
@@ -88,6 +89,7 @@ export function buildManuscriptMaterials(data:Notebook):MaterialCatalog{
   add({...context,key:`bookThought:${entry.id}:text`,kind:'understanding',text:entry.text,at:entry.at,origin:'自己的思考'},scopeIds);
   appendThoughts(entry.thoughts,context,scopeIds);
  }
+ for(const page of pagesOf(data).filter(page=>page.kind==='collection')){const rootScope=questionScope(page.rootId),memberScopes=page.members.map(id=>pagesOf(data).find(p=>p.id===id)).filter(Boolean).map(p=>questionScope(p!.rootId));for(const material of materials)if(material.scopeIds.some(id=>memberScopes.includes(id))&&!material.scopeIds.includes(rootScope))material.scopeIds.push(rootScope);}
  return {scopes:[...scopes.filter(scope=>scope.kind!=='book'),...scopes.filter(scope=>scope.kind==='book')],materials};
 }
 

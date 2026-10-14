@@ -23,3 +23,10 @@
 .reader-cache-status{display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.3rem .75rem;font-size:12px;color:var(--muted-foreground);flex-shrink:0;}
 
 .ocr-text-runs{position:absolute;inset:0;text-align:left}.ocr-text-runs>span{padding:0;margin:0;line-height:1;letter-spacing:0;word-spacing:0}
+
+.library-dialog>[data-slot=dialog-close]{z-index:20;top:17px;right:13px;background:#fff;opacity:1;border:1px solid #e2e8e6;color:#71858c}.library-dialog>.reader-workspace>.reader-toolbar{flex-wrap:wrap;height:auto;min-height:68px;gap:8px;padding-top:10px;padding-bottom:10px}.reader-book-title{min-width:140px}.reader-book-title strong{max-width:100%;overflow:hidden;text-overflow:ellipsis}.library-dialog>.reader-workspace>.reader-toolbar .reader-book-title{flex:1 0 140px}
+
+.zotero-epub-overlay{position:absolute;inset:0;z-index:4;pointer-events:none;mix-blend-mode:multiply}.zotero-epub-overlay i{position:absolute;pointer-events:none;border-radius:1px}
+
+/* Reading status must not change the space available to render the page. */
+.reader-ocr-button{width:34px!important;min-width:34px!important;height:34px!important;padding:0!important;flex:none}.pdf-stage{scrollbar-gutter:stable;overflow-anchor:none}.pdf-page{overflow-anchor:none}

@@ -9,7 +9,7 @@ import {Textarea} from './ui/textarea';
 import {Input} from './ui/input';
 import {readDraft,writeDraft} from '@/lib/draft-storage';
 import {sourceLabel,thoughtSources,withThoughtSources,addThoughtSource} from '@/lib/book-notebook';
-import {type BookThought,type BookThoughtSource,crossNumber,numberOf} from '@/lib/notebook';
+import {type BookThought,type BookThoughtSource,crossNumber,recordLabel} from '@/lib/notebook';
 import './desktop-comparison.css';
 import {isMobileReader} from '@/lib/reader-platform';
 
@@ -63,7 +63,7 @@ export function DesktopComparison({request,onClose,...reader}:Props){
  }
  function resize(event:React.PointerEvent){event.preventDefault();const node=layoutRef.current;if(!node)return;event.currentTarget.setPointerCapture(event.pointerId);const move=(pointer:PointerEvent)=>{const rect=node.getBoundingClientRect(),value=draftRef.current.stacked?(pointer.clientY-rect.top)/rect.height:(pointer.clientX-rect.left)/rect.width;setDraft(current=>({...current,ratio:Math.max(30,Math.min(70,value*100))}));};const stop=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);};window.addEventListener('pointermove',move);window.addEventListener('pointerup',stop,{once:true});window.addEventListener('pointercancel',stop,{once:true});}
  const books=data.libraryBooks.filter(book=>book.format!=='reference'&&`${book.title} ${book.author||''}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
- const locations=[...data.notes.filter(note=>note.kind==='question').map(note=>({id:note.id,label:`${note.parent?numberOf(note,data.notes,data.crossThoughts):'核心问题'} · ${note.title}`})),...data.crossThoughts.map(cross=>({id:cross.id,label:`${crossNumber(cross)} · ${cross.title||cross.text}`}))];
+ const locations=[...data.notes.filter(note=>note.kind==='question').map(note=>({id:note.id,label:`${note.parent?recordLabel(data,note.id):'核心问题'} · ${note.title}`})),...data.crossThoughts.map(cross=>({id:cross.id,label:`${crossNumber(cross)} · ${cross.title||cross.text}`}))];
  return <Dialog open={!!request} onOpenChange={open=>{if(!open)void close();}}><DialogContent className={`comparison-dialog ${wideEditor?'wide-editor':''} ${mobile?'mobile-comparison':''}`} showCloseButton={false} aria-describedby={undefined} onEscapeKeyDown={event=>{if(enlarged){event.preventDefault();setEnlarged(null);}}}>
   <header className="comparison-header"><DialogTitle><BookOpen size={18}/>对照阅读</DialogTitle><div><Button size="sm" variant="ghost" onClick={()=>setDraft(current=>({...current,swapped:!current.swapped}))} disabled={!draft.right}><ArrowLeftRight/>交换左右</Button><Button size="sm" variant="ghost" onClick={()=>setDraft(current=>({...current,stacked:!current.stacked}))}>{draft.stacked?'左右排布':'上下排布'}</Button><Button size="sm" variant="outline" onClick={newThought} disabled={!draft.right||!ready}><Plus/>共同思考</Button><Button size="sm" variant="ghost" onClick={()=>void close()} aria-label="结束对照阅读"><X/></Button></div></header>
   {ready?<div ref={layoutRef} className={`comparison-layout ${draft.stacked?'stacked':''} ${draft.swapped?'swapped':''} ${enlarged?'enlarged-'+enlarged:''}`} style={{'--comparison-ratio':`${draft.ratio}%`} as React.CSSProperties}>

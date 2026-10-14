@@ -11,11 +11,11 @@ import { graphOwners } from '../lib/graph-projection';
 export function boardLabel(data: Notebook, id: string) {
   const note = data.notes.find(item => item.id === id);
   const cross = data.crossThoughts.find(item => item.id === id);
-  return note ? id === ROOT ? '核心问题' : numberOf(note, data.notes, data.crossThoughts) : cross ? `${crossNumber(cross)}〔${crossSignature(cross, data)}〕` : '卡片';
+  return note ? !note.parent ? '问题页' : numberOf(note, data.notes, data.crossThoughts) : cross ? `${crossNumber(cross)}〔${crossSignature(cross, data)}〕` : '卡片';
 }
 
-export function MobileQuestions({ data, selected, onSelect, saving, save, onOpenBook }: {
-  data: Notebook; selected: string | null; onSelect: (id: string | null) => void;
+export function MobileQuestions({ data, graphData=data,rootId=ROOT,viewKey,selected, onSelect, saving, save, onOpenBook }: {
+  data: Notebook;graphData?:Notebook;rootId?:string;viewKey?:string; selected: string | null; onSelect: (id: string | null) => void;
   saving: boolean; save: (next: Notebook, feedback: string) => Promise<boolean>;
   onOpenBook: (id: string, location?: string, readingId?: string) => void;
 }) {
@@ -37,7 +37,7 @@ export function MobileQuestions({ data, selected, onSelect, saving, save, onOpen
   const row = (id: string) => <button type="button" className="mobile-board-row" key={id} onClick={() => onSelect(id)}><span>{boardLabel(data, id)}</span><strong>{itemText(data, id)}</strong><ArrowUpRight size={16}/></button>;
   return <section className="mobile-questions">
     <div className="mobile-map-search"><Search size={18}/><input aria-label="查找问题或卡片" placeholder="找一个问题" value={query} onChange={event => setQuery(event.target.value)}/><button type="button" onClick={() => setCardsOpen(true)}>卡片集</button></div>
-    {query.trim() ? <div className="mobile-board-results">{matches.map(item => row(item.id))}{!matches.length && <p>没有找到相关问题</p>}</div> : <div className="mobile-map-frame"><QuestionMap data={data} loading={false} onOpen={onSelect} mobile/></div>}
+    {query.trim() ? <div className="mobile-board-results">{matches.map(item => row(item.id))}{!matches.length && <p>没有找到相关问题</p>}</div> : <div className="mobile-map-frame"><QuestionMap key={viewKey} viewKey={viewKey} rootId={rootId} data={graphData} loading={false} onOpen={onSelect} mobile/></div>}
     <Dialog open={!!item} onOpenChange={open => { if (!open) onSelect(null); }}><DialogContent className="mobile-question-dialog" showCloseButton={false}>
       <header className="mobile-detail-header"><button type="button" aria-label="返回关系图" onClick={() => onSelect(null)}><ArrowLeft size={22}/></button><div><DialogDescription>{selected && boardLabel(data, selected)}</DialogDescription><DialogTitle>{selected && itemText(data, selected)}</DialogTitle></div></header>
       <div className="mobile-question-scroll" key={selected}>

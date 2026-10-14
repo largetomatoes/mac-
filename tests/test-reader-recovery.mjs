@@ -43,7 +43,7 @@ let rangeCopy='';vm.runInNewContext(`(${copyHandlers[1]})`,{window:{getSelection
 let excerpt,selectionFunction;
 function findSelection(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='selectPdfText')selectionFunction=node.getText(reader);ts.forEachChild(node,findSelection);}findSelection(reader);
 const selectionCode=ts.transpileModule(selectionFunction,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-vm.runInNewContext(selectionCode+';selectPdfText();',{window:{getSelection:()=>selection},cleanReadingText,reflowReadingExcerpt,ocrTextLayerRef:{current:{contains:()=>true}},pdfTextLayerRef:{current:null},pdfPageRef:{current:null},page:1,selectionMenu:()=>undefined,setExcerpt:value=>excerpt=value});assert.equal(excerpt.quote,'Reading connects ideas. Another line');assert.equal(excerpt.rawQuote,original);assert.equal(excerpt.sourceLocation,'pdf:1');
+vm.runInNewContext(selectionCode+';selectPdfText();',{window:{getSelection:()=>selection},cleanReadingText,reflowReadingExcerpt,ocrTextLayerRef:{current:{contains:()=>true}},pdfTextLayerRef:{current:null},pdfPageRef:{current:null},page:1,selectionMenu:()=>undefined,acceptExcerpt:value=>excerpt=value});assert.equal(excerpt.quote,'Reading connects ideas. Another line');assert.equal(excerpt.rawQuote,original);assert.equal(excerpt.sourceLocation,'pdf:1');
 console.log('PASS: real copy/note handlers reflow visual breaks while preserving Range spaces, raw quotation and source locator.');
 function readerFunction(name){let found;function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.text===name)found=node.getText(reader);ts.forEachChild(node,visit);}visit(reader);assert.ok(found,`reader function ${name} exists`);return ts.transpileModule(found,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}
 // Reflow can remove a discretionary hyphen; source matching must still use the
@@ -82,3 +82,9 @@ if(process.argv.includes('--real-ocr')){
  assert.equal(settled,true);assert.ok(gate.start('real:2'));gate.cancel();
  console.log('PASS: real Tesseract recognize interrupted; promise settled and the following page can start.');
 }
+
+let accepted=null,selectionError='';const draftState={processExcerpt:{sourceLocation:'pdf:1',quote:'old quote'},interpretation:'unsaved comment'};
+const acceptContext={bookDraftsRef:{current:{book:draftState}},viewRef:{current:{activeId:'book'}},setReaderError:value=>selectionError=value,setExcerpt:value=>accepted=value};
+vm.runInNewContext(readerFunction('acceptExcerpt')+";acceptExcerpt({sourceLocation:'pdf:2',quote:'new quote'});",acceptContext);assert.equal(accepted,null);assert.ok(selectionError);
+vm.runInNewContext(readerFunction('acceptExcerpt')+";acceptExcerpt({sourceLocation:'pdf:1',quote:'old quote'});",acceptContext);assert.equal(accepted.quote,'old quote');
+console.log('PASS: selecting a new source never silently replaces an unsaved process quotation.');

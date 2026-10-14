@@ -30,7 +30,7 @@ async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootI
    if(state?.lastSync&&state.target===config.target&&!state.pending.length&&stable(project(snapshot.data))===stable(state.observed)){
     const {manifest}=await readManifest(config.target);
     if(manifest&&state.libraryId!==manifest.libraryId)throw Error('本机与云端不是同一资料库，请核对后接入。');
-    if(manifest&&(state.epoch||'legacy')===manifest.epoch){
+    if(manifest&&manifest.schema===3&&(state.epoch||'legacy')===manifest.epoch){
      const listing=await syncApi<{keys:string[]}>('remote',{action:'list',target:config.target,epoch:manifest.epoch}),received=new Set(state.received);
      if(listing.keys.every(key=>received.has(key))){const latest=await syncApi<Envelope>('local');if(latest.version===snapshot.version&&(latest.syncRevision||0)===(snapshot.syncRevision||0))return latest;}
     }

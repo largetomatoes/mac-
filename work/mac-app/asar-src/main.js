@@ -1,9 +1,10 @@
+const {removeRecord}=require('./maintenance.cjs');
 const {parseJsonUtf8}=require('./text-encoding.cjs');
 const RELEASE_VERSION=require('./package.json').releaseVersion||require('./package.json').version;
 const {detachThoughtBook}=require('./book-thought-sources.cjs');
 const { validSettings, validateCoreTransition, validateReadingTransition } = require('./notebook-settings.cjs');
 const {validOcrEntry,mergeOcrPage}=require('./ocr-cache.cjs');
-let notebookQueue=Promise.resolve();
+let notebookQueue=Promise.resolve(),storeRevisionHint=null;
 function serializeNotebook(operation){const result=notebookQueue.then(operation);notebookQueue=result.catch(()=>{});return result;}
 const {allowedReleaseUrl,cachedPublicReleases}=require('./app-updates.cjs');
 const { app, BrowserWindow, Menu, dialog, shell, session, safeStorage } = require('electron');
@@ -13,7 +14,8 @@ const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { URL } = require('node:url');
-const { createAnnotatedPdf } = require('./pdf-export');
+let pdfExporter;
+const createAnnotatedPdf=(...args)=>{pdfExporter??=require('./pdf-export');return pdfExporter.createAnnotatedPdf(...args);};
 const { MAGIC: BACKUP_MAGIC, exportCompleteBackup, inspectCompleteBackup, restoreCompleteBackup } = require('./complete-backup');
 const { createOssArchiveClient, validateOssConfig } = require('./oss-cloud');
 const {isolateLegacyNotebook}=require('./local-sync-migration.cjs');
@@ -35,6 +37,7 @@ let draftQueue = Promise.resolve();
 let cloudJob = { state: 'idle' };
 let cloudBusy = false;
 let zoteroCatalogJob = null;
+let installingUpdate=false,applicationUpdater=null;
 const MAX_DRAFT_BYTES = 32 * 1024 * 1024;
 
 app.commandLine.appendSwitch('disable-background-networking');
@@ -91,23 +94,28 @@ function validNotebookData(data) {
 function normalizeNotebookData(data) {
   return { ...data, thoughtReplies: data.thoughtReplies || [], manuscripts: data.manuscripts || [], libraryBooks: (data.libraryBooks || []).map((book) => ({ ...book, pdfChapters: (book.pdfChapters || []).filter((chapter) => chapter && typeof chapter.title === 'string' && Number.isInteger(chapter.startPage) && chapter.startPage > 0) })), libraryHighlights: data.libraryHighlights || [], ocrCache: data.ocrCache || [], bookThoughts: (data.bookThoughts || []).map((entry) => ({ ...entry, scope: entry.scope || 'book', locator: entry.locator || '', quote: entry.quote || undefined, chapter: entry.chapter || undefined, questionIds: entry.questionIds || [], thoughts: entry.thoughts || [] })), links: data.links || [], dismissedSuggestions: data.dismissedSuggestions || [] };
 }
+function statSignature(stat){return [dataPath,stat.ino,stat.size,stat.mtimeMs,stat.ctimeMs].join(':');}
+async function readStoreRevision(){const stat=await fsp.stat(dataPath),signature=statSignature(stat);if(storeRevisionHint?.signature===signature)return {version:storeRevisionHint.version,syncRevision:storeRevisionHint.syncRevision};const current=await readStore();return {version:current.version,syncRevision:current.syncRevision||0};}
 async function readStore() {
+  const before=await fsp.stat(dataPath);
   const value = parseJsonUtf8(await fsp.readFile(dataPath));
   value.data = normalizeNotebookData(value.data || {});
   if (!Number.isInteger(value.version) || !validNotebookData(value.data)) throw new Error('本地数据格式不正确');
+  const after=await fsp.stat(dataPath);if(statSignature(before)===statSignature(after))storeRevisionHint={signature:statSignature(after),version:value.version,syncRevision:value.syncRevision||0};else storeRevisionHint=null;
   return value;
 }
-async function writeStore(value) {
-  const previous=parseJsonUtf8(await fsp.readFile(dataPath));
+// A previousValue is reused only inside the same serialized notebook transaction.
+async function writeStore(value,previousValue) {
+  const previous=previousValue||parseJsonUtf8(await fsp.readFile(dataPath));
   if(value.sync===undefined&&previous.sync)value={...value,sync:previous.sync,syncRevision:previous.syncRevision||0};
-  if(JSON.stringify(previous)===JSON.stringify(value))return;
+  if(previous.version===value.version&&(previous.syncRevision||0)===(value.syncRevision||0)&&JSON.stringify(previous)===JSON.stringify(value))return;
   const temporary = `${dataPath}.new`;
   const backup = `${dataPath}.backup`;
   const backupTemporary = `${backup}.new-${crypto.randomUUID()}`;
   try {
     await fsp.copyFile(dataPath, backupTemporary);
     await fsp.rename(backupTemporary, backup);
-    await fsp.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await fsp.writeFile(temporary, `${JSON.stringify(value)}\n`, {encoding:'utf8',mode:0o600});
     await fsp.rename(temporary, dataPath);
   } catch (error) {
     await fsp.unlink(backupTemporary).catch(() => {});
@@ -115,12 +123,12 @@ async function writeStore(value) {
     throw error;
   }
 }
-async function requestBody(request) {
+async function requestBody(request,maximum=128*1024*1024) {
   const chunks = [];
   let length = 0;
   for await (const chunk of request) {
     length += chunk.length;
-    if (length > 40 * 1024 * 1024) throw new Error('请求过大');
+    if (length > maximum) throw new Error('资料请求超过大小限制，原内容已保留。');
     chunks.push(chunk);
   }
   return parseJsonUtf8(Buffer.concat(chunks));
@@ -205,9 +213,21 @@ function deleteQuestion(data, id) {
   };
 }
 
+async function handleMaintenance(request,response){
+ if(request.headers?.origin&&request.headers.origin!==`http://127.0.0.1:${localPort}`||request.headers?.['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'无效请求来源'});
+ try{
+  const input=await requestBody(request),current=await readStore();
+  if(input.version!==current.version)return jsonReply(response,409,{error:'资料刚有修改，请重新选择记录。'});
+  if(input.confirmation!=='删除'||input.confirmed!==true)return jsonReply(response,400,{error:'请先核对删除范围。'});
+  const data=removeRecord(current.data,input.target);
+  if(!validNotebookData(data))throw Error('删除结果无法验证，未修改资料。');
+  await writeStore({...current,version:current.version+1,data},current);
+  return jsonReply(response,200,{version:current.version+1,data});
+ }catch(error){return jsonReply(response,400,{error:error.message});}
+}
 async function handleApi(request, response) {
   try {
-    if (request.method === 'GET') return jsonReply(response, 200, { ...(await readStore()), storage: storageMode, storageDirectory: storageDir });
+    if (request.method === 'GET') {const current=await readStore();return jsonReply(response,200,{version:current.version,data:current.data,storage:storageMode,storageDirectory:storageDir});}
     if (restoringBackup) return jsonReply(response, 423, { error: '正在恢复备份，请稍候。' });
     const input = await requestBody(request);
     const current = await readStore();
@@ -216,21 +236,21 @@ async function handleApi(request, response) {
       if(!validOcrEntry(input.entry))return jsonReply(response,400,{error:'本页识别结果格式不正确，文字仍保留在待保存列表。'});
       if(!current.data.libraryBooks.some(book=>book.id===input.entry.libraryBookId&&book.format==='pdf'))return jsonReply(response,404,{error:'这本书已经移除。'});
       const data=mergeOcrPage(current.data,input.entry),version=current.version+1;
-      await writeStore({version,data});return jsonReply(response,200,{version,data});
+      await writeStore({version,data},current);return jsonReply(response,200,{version,data});
     }
     if (request.method === 'PUT') {
       if (!validNotebookData(input.data)) return jsonReply(response, 400, { error: '笔记数据格式不正确。' });
       const coreError = validateCoreTransition(current.data, input.data) || validateReadingTransition(current.data, input.data);
       if (coreError) return jsonReply(response, 400, { error: coreError });
       if(JSON.stringify(current.data)===JSON.stringify(input.data))return jsonReply(response,200,{version:current.version});
-      await writeStore({ version: current.version + 1, data: input.data });
+      await writeStore({ version: current.version + 1, data: input.data },current);
       return jsonReply(response, 200, { version: current.version + 1 });
     }
     if (request.method === 'DELETE') {
       const target = current.data.notes.find((note) => note.id === input.id);
       if (!input.confirmed || input.confirmation !== '删除' || !target || target.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
       const data = deleteQuestion(current.data, input.id);
-      await writeStore({ version: current.version + 1, data });
+      await writeStore({ version: current.version + 1, data },current);
       return jsonReply(response, 200, { version: current.version + 1, data });
     }
     return jsonReply(response, 405, { error: '不支持的操作。' });
@@ -345,7 +365,7 @@ async function handleLibraryDelete(request, response) {
 	      }),
 	      bookThoughts: current.data.bookThoughts.map(entry=>detachThoughtBook(entry,book.id,replacementBook?.id,current.data.libraryBooks.filter(item=>item.id!==book.id).map(item=>item.id)))
     };
-    await writeStore({ version: current.version + 1, data });
+    await writeStore({ version: current.version + 1, data },current);
     if (stagedFile) await fsp.unlink(stagedFile).catch(() => {});
     return jsonReply(response, 200, { version: current.version + 1, data });
   } catch (error) {
@@ -698,6 +718,7 @@ async function handleDeviceSync(request,response,url) {
   if(request.headers.host!=='127.0.0.1:'+localPort||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
   try {
     const route=url.pathname.slice('/api/sync/'.length);
+    if(route==='revision')return jsonReply(response,200,await readStoreRevision());
     if(route==='identity')return jsonReply(response,200,await syncIdentity());
     if(route==='local')return jsonReply(response,200,{...await readStore(),storage:storageMode});
     const input=await requestBody(request);
@@ -721,7 +742,7 @@ async function handleDeviceSync(request,response,url) {
         const directory=await isolateLegacyNotebook({localDir:app.getPath('userData'),legacyDir:storageDir,expected:current,readCurrent:readStore,saveConfig:config=>atomicPrivateJson(path.join(app.getPath('userData'),'sync-config.json'),config)});
         storageDir=directory;dataPath=path.join(directory,'notebook.json');storageMode='local';
       }
-      const value={version:current.version+(JSON.stringify(current.data)===JSON.stringify(input.data)?0:1),syncRevision:(current.syncRevision||0)+1,data:input.data,sync:input.sync};await writeStore(value);return jsonReply(response,200,{...value,storage:storageMode});
+      const value={version:current.version+(JSON.stringify(current.data)===JSON.stringify(input.data)?0:1),syncRevision:(current.syncRevision||0)+1,data:input.data,sync:input.sync};await writeStore(value,current);return jsonReply(response,200,{...value,storage:storageMode});
     });
     const active=()=>activeSyncClient(input.target);
     if(route==='remote')return jsonReply(response,200,await (await active()).syncRemote(input));
@@ -733,18 +754,42 @@ async function handleDeviceSync(request,response,url) {
       if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
       if(input.action==='upload'){
         const cloudFile=await client.uploadBook(destination,book.format);
-        return await serializeNotebook(async()=>{const current=await readStore();if(current.sync?.target!==input.target)throw new Error('同步连接已变化，书籍清单暂未写入。');const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data});return jsonReply(response,200,{cloudFile});});
+        return await serializeNotebook(async()=>{if(restoringBackup)throw Error('正在保护资料，书籍清单稍后继续保存。');const current=await readStore();if(current.sync?.target!==input.target)throw new Error('同步连接已变化，书籍清单暂未写入。');const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data},current);return jsonReply(response,200,{cloudFile});});
       }
     }
     return jsonReply(response,404,{error:'不支持的同步操作'});
   }catch(error){return jsonReply(response,500,{error:error.message||'同步暂时无法完成',code:error.status});}
 }
 
+function appUpdater(){
+ if(!applicationUpdater)applicationUpdater=require('./app-updater.cjs').createUpdater({
+  directory:path.join(app.getPath('userData'),'update-cache'),version:RELEASE_VERSION,build:Number(require('./package.json').buildVersion||0),
+  platform:process.platform,arch:process.arch,exePath:process.execPath,bundleId:'site.chatgpt.liyibo2432023353.question-atlas-notes',
+  releases:()=>cachedPublicReleases(path.join(app.getPath('userData'),'update-check-cache.json'),true),
+  protect:async()=>{await new Promise(resolve=>setTimeout(resolve,700));await notebookQueue;await draftQueue;restoringBackup=true;
+   const current=await readStore();if(!validNotebookData(current.data))throw Error('资料未能核验，未开始安装。');
+   const folder=path.join(app.getPath('userData'),'update-cache','safeguard-'+Date.now());await fsp.mkdir(folder,{recursive:true,mode:0o700});
+   await fsp.copyFile(dataPath,path.join(folder,'notebook.json'));const before=await fsp.readFile(dataPath),copied=await fsp.readFile(path.join(folder,'notebook.json'));if(!before.equals(copied))throw Error('资料正在变化，请稍后安装。');
+   const drafts=await readDrafts();await fsp.writeFile(path.join(folder,'drafts.json'),JSON.stringify(drafts),{mode:0o600});
+  }
+ });return applicationUpdater;
+}
 async function handleAppUpdates(request,response,url){
   const pathname=url.pathname;
   const origin=`http://127.0.0.1:${localPort}`;
   if(request.headers.host!==`127.0.0.1:${localPort}`||(request.headers.origin&&request.headers.origin!==origin)||request.headers['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'来源不匹配'});
   try{
+    if(pathname==='/api/app/update'){
+      const updater=appUpdater();if(request.method==='GET')return jsonReply(response,200,updater.status());
+      const input=await requestBody(request);
+      if(input.action==='download')return jsonReply(response,200,updater.start(input.version));
+      if(input.action==='cancel')return jsonReply(response,200,updater.cancel());
+      if(input.action==='install'){
+        if(cloudBusy||restoringBackup)throw Error('另一项资料操作正在执行，请稍后安装。');
+        try{const result=await updater.install();installingUpdate=true;jsonReply(response,200,result);setTimeout(()=>app.quit(),300);return;}catch(error){restoringBackup=false;throw error;}
+      }
+      throw Error('更新操作无效。');
+    }
     if(pathname==='/api/app/info'&&request.method==='GET')return jsonReply(response,200,{version:RELEASE_VERSION,build:String(require('./package.json').buildVersion||''),platform:process.platform,arch:process.arch});
     if(pathname==='/api/app/releases'&&request.method==='GET')return jsonReply(response,200,await cachedPublicReleases(path.join(app.getPath('userData'),'update-check-cache.json'),url.searchParams.get('manual')==='1'));
     if(pathname==='/api/app/open'&&request.method==='POST'){
@@ -759,6 +804,7 @@ async function handleAppUpdates(request,response,url){
 async function startServer() {
   server = http.createServer((request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
+    if(restoringBackup&&request.method!=='GET'&&!url.pathname.startsWith('/api/app/'))return jsonReply(response,423,{error:'正在保护或恢复资料，请稍候。'});
     if (url.pathname === '/api/backup/restore' && request.method === 'POST') { if(request.headers.origin && request.headers.origin !== `http://127.0.0.1:${localPort}`)return jsonReply(response,403,{error:'来源不匹配'}); void restoreBackup().then(()=>jsonReply(response,200,{finished:true})).catch(()=>jsonReply(response,500,{error:'无法恢复备份'})); }
     else if (url.pathname.startsWith('/api/app/')) void handleAppUpdates(request,response,url);
     else if (url.pathname.startsWith('/api/sync/')) void handleDeviceSync(request,response,url);
@@ -769,6 +815,7 @@ async function startServer() {
     else if (url.pathname === '/api/share') handleShare(request, response);
     else if (url.pathname === '/api/library/import') handleLibraryImport(request, response);
     else if (url.pathname === '/api/library/export-annotated') handleAnnotatedPdfExport(request, response);
+    else if (url.pathname === '/api/notebook/maintenance'&&request.method==='POST') void serializeNotebook(()=>handleMaintenance(request,response));
     else if (url.pathname === '/api/library/delete') void serializeNotebook(()=>handleLibraryDelete(request, response));
     else if (url.pathname.startsWith('/api/library/file/')) handleLibraryFile(request, response, url.pathname);
     else handleStatic(request, response, url.pathname);
@@ -868,6 +915,7 @@ function setMenu() {
 }
 function createWindow() {
   mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 820, minHeight: 620, title: '问间', ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' } : {}), backgroundColor: '#f7f8fb', show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true } });
+  mainWindow.webContents.on('will-prevent-unload',event=>{if(installingUpdate)event.preventDefault();});
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.loadURL(`http://127.0.0.1:${localPort}/`).catch((error) => { console.error(error); dialog.showErrorBox('问间无法打开', '本地页面载入失败，请重新打开问间。'); });
 }
@@ -902,11 +950,13 @@ else {
       if (!fs.existsSync(dataPath)) throw new Error('坚果云目录中的笔记暂时不可用。问间已停止启动，避免打开空白资料库。');
     }
     const store = await readStore();
+    await appUpdater().init();
     libraryDir = await prepareLocalLibrary({ storageDir, userDataDir: app.getPath('userData'), books: store.data.libraryBooks, storageMode });
     if (storageMode === 'local') await fsp.writeFile(path.join(storageDir, '.wenjian-storage.json'), `${JSON.stringify({ initializedAt: new Date().toISOString() })}\n`, { flag: 'wx' }).catch((error) => { if (error.code !== 'EEXIST') throw error; });
     localPort = await startServer();
     console.log(`WENJIAN_LOCAL_PORT=${localPort}`);
     setMenu(); createWindow();
+    mainWindow.once('ready-to-show',()=>void appUpdater().confirmBoot());
   }).catch((error) => { console.error(error); dialog.showErrorBox('问间无法启动', error.message || '本地数据未能载入。'); app.quit(); });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && localPort) createWindow(); });
 }

@@ -184,14 +184,14 @@ export function mergeZoteroCatalog(data:Notebook,catalog:ZoteroCatalog):{data:No
   const source:ZoteroSource={
    serverId:catalog.serverId,library:catalog.library||'users/0',itemKey:item.itemKey,
    attachmentKey:retainedAttachment||item.attachmentKey,itemVersion:item.itemVersion,itemType:item.itemType,
-   title:item.title,date:item.date,publisher:item.publisher,doi:item.doi,isbn:item.isbn,
+   title:item.title,sourceFile:item.storedFile||oldSource?.sourceFile,author:item.author,date:item.date,publisher:item.publisher,doi:item.doi,isbn:item.isbn,
    collections:[...new Set(item.collections)].sort(),
    annotations:mergeAnnotations(oldSource?.annotations||[],item.annotations),sourceAvailable:item.sourceAvailable!==false,
   };
   if(previous){
    // Existing originals and their progress stay paired. A reference can acquire its first file.
    const acquireFile=previous.format==='reference'&&item.format!=='reference'&&!!item.storedFile;
-   const next:LibraryBook={...previous,inReadingLibrary:isReadingBook(previous),zotero:source,...(acquireFile?{format:item.format,storedFile:item.storedFile,originalName:item.originalName}:{})};
+   const next:LibraryBook={...previous,display:previous.display||{...(previous.title!==(oldSource?.title||item.title)?{title:previous.title}:{}),...(previous.author&&previous.author!==(oldSource?.author||item.author)?{author:previous.author}:{})},inReadingLibrary:isReadingBook(previous),zotero:source,...(acquireFile?{format:item.format,storedFile:item.storedFile,originalName:item.originalName}:{})};
    if(!equal(previous,next)){books[index!]=next;updated++;}
    identities.set(identity,index!);
   }else{
@@ -199,7 +199,7 @@ export function mergeZoteroCatalog(data:Notebook,catalog:ZoteroCatalog):{data:No
    while(usedIds.has(id))id=`${bookId(identity)}-${suffix++}`;
    usedIds.add(id);
    const hasFile=item.format!=='reference'&&!!item.storedFile;
-   books.push({id,title:item.title||item.originalName||'未命名文献',author:item.author||'',format:hasFile?item.format:'reference',storedFile:hasFile?item.storedFile:'',originalName:item.originalName||item.title||item.itemKey,addedAt:item.addedAt,progress:{},zotero:source,inReadingLibrary:false});
+   books.push({id,display:{},title:item.title||item.originalName||'未命名文献',author:item.author||'',format:hasFile?item.format:'reference',storedFile:hasFile?item.storedFile:'',originalName:item.originalName||item.title||item.itemKey,addedAt:item.addedAt,progress:{},zotero:source,inReadingLibrary:false});
    identities.set(identity,books.length-1);
    added++;
   }
