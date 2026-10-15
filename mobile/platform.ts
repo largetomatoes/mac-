@@ -1,5 +1,5 @@
 import {validSettings,validateCoreTransition,validateReadingTransition} from '../lib/notebook-settings.cjs';
-import {removeRecord} from '../lib/maintenance.cjs';
+import {removeRecords,maintenanceReceipt,restoreMaintenance,type MaintenanceReceipt} from '../lib/maintenance.cjs';
 import {App} from '@capacitor/app';
 import {PREVIEW_VERSION,validReleaseUrl} from '../lib/app-updates';
 import {Capacitor,registerPlugin} from '@capacitor/core';
@@ -13,7 +13,7 @@ type Config={configured:boolean;region?:string;bucket?:string;prefix?:string;acc
 interface NativeStorage{appUpdate(input:{action:string;version?:string;manifestUrl?:string}):Promise<unknown>;backupLocal():Promise<{backupPath:string}>;appReleases():Promise<{releases:unknown[]}>;openRelease(input:{url:string}):Promise<{ok:boolean}>;connectSync(input:{config:unknown}):Promise<unknown>;detachSync(input:{target:string}):Promise<unknown>;getSyncIdentity():Promise<{provider:string;configured:boolean;target:string}>;setSyncConnection(input:{config:unknown}):Promise<unknown>;readStore():Promise<{text?:string}>;writeStore(input:{text:string}):Promise<{ok:boolean}>;bookInfo(input:{name:string}):Promise<{available:boolean;uri:string;size:number}>;importBook():Promise<{cancelled?:boolean;name:string;storedFile:string;format:'pdf'|'epub'}>;getConfig():Promise<Config>;setConfig(input:{config:unknown}):Promise<Config>;remote(input:unknown):Promise<unknown>;transferBook(input:{name:string;action:string;file?:CloudFile;target?:string}):Promise<CloudFile>}
 const native=registerPlugin<NativeStorage>('WenjianStorage');
 const isNative=Capacitor.isNativePlatform();
-type Store=Envelope&{drafts:Record<string,unknown>};
+type Store=Envelope&{drafts:Record<string,unknown>;localTrash?:MaintenanceReceipt[]};
 let queue:Promise<unknown>=Promise.resolve(),cached:Store|undefined;
 const copy=<T,>(value:T):T=>structuredClone(value);
 function database(){return new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('wenjian-mobile-preview',1);request.onupgradeneeded=()=>request.result.createObjectStore('files');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
@@ -70,9 +70,22 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
    if(route==='/api/drafts'){if(method==='GET')return json({drafts:current.drafts});if(method==='PUT'&&typeof payload.key==='string'){await writeStore({...current,drafts:{...current.drafts,[payload.key]:payload.value}});return json({ok:true});}}
    if(route==='/api/sync/commit'){if(payload.version!==current.version||(payload.syncRevision||0)!==(current.syncRevision||0))return json({error:'本机刚保存新内容'},409);if(!validSettings(payload.data)||payload.sync?.schema!==1)throw Error('同步资料不完整');if(JSON.stringify(current.data)===JSON.stringify(normalize(payload.data))&&JSON.stringify(current.sync)===JSON.stringify(payload.sync))return json(current);return json(await writeStore({...current,version:current.version+(JSON.stringify(current.data)===JSON.stringify(payload.data)?0:1),syncRevision:(current.syncRevision||0)+1,data:normalize(payload.data),sync:payload.sync}));}
    if(route==='/api/notebook/maintenance'){
+    const trash=current.localTrash||[];
+    if(method==='GET')return json({entries:trash.map(({id,at,label,count})=>({id,at,label,count})).reverse()});
     if(payload.version!==current.version)return json({error:'资料刚有修改'},409);
-    if(payload.confirmation!=='删除'||payload.confirmed!==true)throw Error('请先核对删除范围');
-    return json(await writeStore({...current,version:current.version+1,data:removeRecord(current.data,payload.target)}));
+    if(payload.confirmation!==(payload.action==='purge'?'永久清除':'删除')||payload.confirmed!==true)throw Error('请先核对操作范围');
+    let data=current.data,localTrash=trash,receiptId:string|undefined;
+    if(payload.action==='restore'||payload.action==='purge'){
+     const receipt=trash.find(r=>r.id===payload.receiptId);if(!receipt)throw Error('恢复副本已变化，请重新打开最近删除');
+     if(payload.action==='restore')data=restoreMaintenance(data,receipt);
+     localTrash=trash.filter(r=>r.id!==receipt.id);
+    }else{
+     const targets=payload.targets||(payload.target?[payload.target]:[]);
+     data=removeRecords(data,targets,{preserveThoughts:payload.preserveThoughts!==false});receiptId=crypto.randomUUID();
+     localTrash=[...trash,maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:'所选笔记与标注',count:targets.length})];
+     if(new TextEncoder().encode(JSON.stringify(localTrash)).length>48*1024*1024)throw Error('最近删除空间已满，未移除任何内容。请先整理恢复副本。');
+    }
+    return json({...await writeStore({...current,version:current.version+1,data,localTrash}),receiptId});
    }
    if(route==='/api/notebook'){
     if(payload.version!==current.version)return json({error:'资料已更新'},409);

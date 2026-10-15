@@ -87,3 +87,5 @@
 .folder-shelf-error{margin:0;padding:10px 12px;border-radius:6px;color:#a1513c;background:#f9eee9;font-size:12px;line-height:1.7}
 .folder-shelf-folder:focus-visible,.folder-shelf-open-book:focus-visible,.folder-shelf-collection-toggle:focus-visible{outline:2px solid #8ca080;outline-offset:-2px;border-radius:6px}
 @media(hover:hover){.folder-shelf-folder-actions{opacity:.55}.folder-shelf-folder-row:hover>.folder-shelf-folder-actions,.folder-shelf-folder-row:focus-within>.folder-shelf-folder-actions{opacity:1}.folder-shelf-move{opacity:.7}.folder-shelf-book:hover>.folder-shelf-move,.folder-shelf-book:focus-within>.folder-shelf-move{opacity:1}}
+
+.book-reading-filter{display:flex;align-items:center;gap:8px;padding:2px 14px 12px;font-size:11px;color:#728078}.book-reading-filter select{margin-left:auto;max-width:130px;background:#fafbf7;border:1px solid #dde3da;border-radius:6px;padding:5px 8px;font-size:12px;color:#526b60}.book-finished-badge{display:inline-block;font:10px/1.5 system-ui!important;color:#607b66!important;background:#eaf0e7;padding:1px 5px;border-radius:4px;margin-left:7px;vertical-align:middle;white-space:nowrap}

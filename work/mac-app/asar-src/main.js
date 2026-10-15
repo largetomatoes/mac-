@@ -1,4 +1,4 @@
-const {removeRecord}=require('./maintenance.cjs');
+const {removeRecords,maintenanceReceipt,restoreMaintenance}=require('./maintenance.cjs');
 const {parseJsonUtf8}=require('./text-encoding.cjs');
 const RELEASE_VERSION=require('./package.json').releaseVersion||require('./package.json').version;
 const {detachThoughtBook}=require('./book-thought-sources.cjs');
@@ -107,6 +107,7 @@ async function readStore() {
 // A previousValue is reused only inside the same serialized notebook transaction.
 async function writeStore(value,previousValue) {
   const previous=previousValue||parseJsonUtf8(await fsp.readFile(dataPath));
+  if(value.localTrash===undefined&&previous.localTrash)value={...value,localTrash:previous.localTrash};
   if(value.sync===undefined&&previous.sync)value={...value,sync:previous.sync,syncRevision:previous.syncRevision||0};
   if(previous.version===value.version&&(previous.syncRevision||0)===(value.syncRevision||0)&&JSON.stringify(previous)===JSON.stringify(value))return;
   const temporary = `${dataPath}.new`;
@@ -216,13 +217,29 @@ function deleteQuestion(data, id) {
 async function handleMaintenance(request,response){
  if(request.headers?.origin&&request.headers.origin!==`http://127.0.0.1:${localPort}`||request.headers?.['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'无效请求来源'});
  try{
-  const input=await requestBody(request),current=await readStore();
+  const current=await readStore(),trash=current.localTrash||[];
+  if(request.method==='GET')return jsonReply(response,200,{entries:trash.map(({id,at,label,count})=>({id,at,label,count})).reverse()});
+  if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份，请稍候。'});
+  const input=await requestBody(request);
   if(input.version!==current.version)return jsonReply(response,409,{error:'资料刚有修改，请重新选择记录。'});
-  if(input.confirmation!=='删除'||input.confirmed!==true)return jsonReply(response,400,{error:'请先核对删除范围。'});
-  const data=removeRecord(current.data,input.target);
-  if(!validNotebookData(data))throw Error('删除结果无法验证，未修改资料。');
-  await writeStore({...current,version:current.version+1,data},current);
-  return jsonReply(response,200,{version:current.version+1,data});
+  if(input.confirmed!==true||input.confirmation!==(input.action==='purge'?'永久清除':'删除'))return jsonReply(response,400,{error:'请先核对操作范围。'});
+  let data=current.data,localTrash=trash,receiptId=null;
+  if(input.action==='restore'||input.action==='purge'){
+   const receipt=trash.find(r=>r.id===input.receiptId);if(!receipt)throw Error('恢复副本已变化，请重新打开最近删除。');
+   if(input.action==='restore')data=restoreMaintenance(data,receipt);
+   localTrash=trash.filter(r=>r.id!==receipt.id);
+  }else{
+   const targets=input.targets||(input.target?[input.target]:[]);
+   data=removeRecords(data,targets,{preserveThoughts:input.preserveThoughts!==false,id:()=>crypto.randomUUID()});
+   receiptId=crypto.randomUUID();
+   const first=targets[0],book=current.data.libraryBooks.find(b=>b.id===first?.bookId||b.id===current.data.readingNotes.find(n=>n.id===first?.id)?.libraryBookId||b.id===current.data.libraryHighlights.find(n=>n.id===first?.id)?.libraryBookId);
+   const receipt=maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:book?(book.display?.title||book.title)+' · 所选记录':'所选笔记与标注',count:targets.length});
+   localTrash=[...trash,receipt];
+   if(Buffer.byteLength(JSON.stringify(localTrash),'utf8')>48*1024*1024)throw Error('恢复副本空间已满，请先在最近删除中恢复或清除不需要的副本。尚未删除任何内容。');
+  }
+  if(!validNotebookData(data))throw Error('操作结果无法验证，未修改资料。');
+  await writeStore({...current,version:current.version+1,data,localTrash},current);
+  return jsonReply(response,200,{version:current.version+1,data,receiptId});
  }catch(error){return jsonReply(response,400,{error:error.message});}
 }
 async function handleApi(request, response) {
@@ -250,8 +267,11 @@ async function handleApi(request, response) {
       const target = current.data.notes.find((note) => note.id === input.id);
       if (!input.confirmed || input.confirmation !== '删除' || !target || target.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
       const data = deleteQuestion(current.data, input.id);
-      await writeStore({ version: current.version + 1, data },current);
-      return jsonReply(response, 200, { version: current.version + 1, data });
+      const receiptId=crypto.randomUUID(),receipt=maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:'问题分支 · '+target.title,count:current.data.notes.length-data.notes.length});
+      const localTrash=[...(current.localTrash||[]),receipt];
+      if(Buffer.byteLength(JSON.stringify(localTrash),'utf8')>48*1024*1024)throw Error('最近删除空间已满，未删除问题。');
+      await writeStore({ version: current.version + 1, data,localTrash },current);
+      return jsonReply(response, 200, { version: current.version + 1, data,receiptId });
     }
     return jsonReply(response, 405, { error: '不支持的操作。' });
   } catch (error) {
@@ -545,7 +565,7 @@ async function restoreCloudSnapshot(key) {
     cloudJob = { ...cloudJob, stage: '正在备份本机现有资料', progress: undefined };
     await exportCompleteBackup({ notebookPath: dataPath, libraryDir, draftsPath, destination: backupPath, validateNotebook: (value) => Number.isInteger(value?.version) && validNotebookData(value?.data) });
     cloudJob = { ...cloudJob, stage: '正在恢复笔记和书籍', progress: undefined };
-    await restoreCompleteBackup({ archivePath: temporary, notebookPath: dataPath, libraryDir, draftsPath, validateNotebook: (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data), writeNotebook: (candidate) => writeStore(candidate), writeDrafts });
+    await restoreCompleteBackup({ archivePath: temporary, notebookPath: dataPath, libraryDir, draftsPath, validateNotebook: (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data), writeNotebook: (candidate) => writeStore({...candidate,localTrash:candidate.localTrash||[]}), writeDrafts });
     await saveCloudState(config, key);
     return { restored: true, backupPath };
   } finally {
@@ -707,7 +727,7 @@ async function restoreNutstoreBackup(input){
     const backupDir=path.join(app.getPath('userData'),'restore-safeguards');await fsp.mkdir(backupDir,{recursive:true});
     const backupPath=path.join(backupDir,`恢复前-${Date.now()}-${crypto.randomUUID()}.wenjian-backup`);
     await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination:backupPath,validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data)});
-    await restoreCompleteBackup({archivePath:temporary,notebookPath:dataPath,libraryDir,draftsPath,validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data),writeNotebook:candidate=>writeStore(candidate),writeDrafts});
+    await restoreCompleteBackup({archivePath:temporary,notebookPath:dataPath,libraryDir,draftsPath,validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data),writeNotebook:candidate=>writeStore({...candidate,localTrash:candidate.localTrash||[]}),writeDrafts});
     await fsp.unlink(cloudStatePath()).catch(error=>{if(error.code!=='ENOENT')throw error;});
     return {finished:true,backupPath};
   }finally{restoringBackup=false;await fsp.unlink(temporary).catch(()=>{});}
@@ -815,7 +835,7 @@ async function startServer() {
     else if (url.pathname === '/api/share') handleShare(request, response);
     else if (url.pathname === '/api/library/import') handleLibraryImport(request, response);
     else if (url.pathname === '/api/library/export-annotated') handleAnnotatedPdfExport(request, response);
-    else if (url.pathname === '/api/notebook/maintenance'&&request.method==='POST') void serializeNotebook(()=>handleMaintenance(request,response));
+    else if (url.pathname === '/api/notebook/maintenance'&&['GET','POST'].includes(request.method)) void serializeNotebook(()=>handleMaintenance(request,response));
     else if (url.pathname === '/api/library/delete') void serializeNotebook(()=>handleLibraryDelete(request, response));
     else if (url.pathname.startsWith('/api/library/file/')) handleLibraryFile(request, response, url.pathname);
     else handleStatic(request, response, url.pathname);
@@ -880,9 +900,9 @@ async function chooseBackup() {
     await exportCompleteBackup({notebookPath:dataPath,libraryDir,draftsPath,destination:path.join(backupDir,`恢复前-${Date.now()}-${crypto.randomUUID()}.wenjian-backup`),validateNotebook:candidate=>Number.isInteger(candidate?.version)&&validNotebookData(candidate?.data)});
     if (complete) {
       await draftQueue;
-      await restoreCompleteBackup({ archivePath: source, notebookPath: dataPath, libraryDir, draftsPath, validateNotebook: (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data), writeNotebook: (candidate) => writeStore(candidate), writeDrafts });
+      await restoreCompleteBackup({ archivePath: source, notebookPath: dataPath, libraryDir, draftsPath, validateNotebook: (candidate) => Number.isInteger(candidate?.version) && validNotebookData(candidate?.data), writeNotebook: (candidate) => writeStore({...candidate,localTrash:candidate.localTrash||[]}), writeDrafts });
     }
-    else await writeStore(value);
+    else await writeStore({...value,localTrash:value.localTrash||[]});
     await fsp.unlink(cloudStatePath()).catch((error) => { if (error.code !== 'ENOENT') throw error; });
     await mainWindow.webContents.reloadIgnoringCache();
   } catch (error) {
@@ -897,7 +917,7 @@ function setMenu() {
     : [];
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: process.platform === 'darwin' ? '问间' : '文件', submenu: [
-      { role: 'about', label: '关于问间' }, { type: 'separator' },
+      { role: 'about', label: '关于问间' }, { label:'设置…', accelerator:'CmdOrCtrl+,', click:()=>mainWindow?.webContents.executeJavaScript("window.dispatchEvent(new Event('wenjian:settings'))") }, { type: 'separator' },
       { label: '导出完整备份…', accelerator: 'CmdOrCtrl+Shift+S', click: exportBackup },
       { label: '从备份恢复…', click: restoreBackup },
       { label: '阿里云 OSS 备份…', click: () => {

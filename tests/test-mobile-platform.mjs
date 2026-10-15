@@ -13,7 +13,7 @@ import maintenance from '../lib/maintenance.cjs';
 function load(file,imports={},globals={}){
  const module={exports:{}};
  const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- vm.runInNewContext(code,{module,exports:module.exports,require:name=>{assert.ok(name in imports,`unexpected import ${name}`);return imports[name];},crypto:webcrypto,structuredClone,Error,URL,Response,...globals},{filename:file});
+ vm.runInNewContext(code,{module,exports:module.exports,require:name=>{assert.ok(name in imports,`unexpected import ${name}`);return imports[name];},crypto:webcrypto,structuredClone,Error,URL,Response,TextEncoder,...globals},{filename:file});
  return module.exports;
 }
 const folders=load('lib/library-folders.ts');
@@ -130,3 +130,14 @@ test('mobile book availability rejects missing, empty and size-mismatched origin
 });
 
 test('mobile reading view avoids copying sync history while native history remains intact',async()=>{const phone=device(),full=await phone.module.mobileSnapshot(),view=await phone.module.mobileViewSnapshot();assert.equal(view.sync,undefined);assert.deepEqual(view.data,full.data);assert.deepEqual(JSON.parse(JSON.stringify(phone.store.sync)),full.sync);assert.deepEqual((await phone.module.mobileSnapshot()).sync,full.sync);assert.equal(phone.writes.length,0);});
+
+
+test('mobile maintenance batch preserves children, recovery history, later writes and sync state',async()=>{
+ const phone=device();phone.store.data.cards=[{id:'parent',text:'原话',thoughts:[{id:'child',text:'后续思考'}]},{id:'other',text:'其他卡片',thoughts:[]}];phone.store.data.thoughtReplies=[{id:'reply',thoughtId:'child',text:'回答'}];
+ const first=await phone.api('/api/notebook/maintenance',{version:7,action:'remove',targets:[{kind:'card',id:'parent'}],confirmed:true,confirmation:'删除'});assert.equal(first.status,200);assert.equal(phone.store.localTrash.length,1);assert(phone.store.data.cards.some(c=>c.thoughts.some(t=>t.id==='child')));assert.equal(phone.store.data.thoughtReplies.length,1);
+ const data=structuredClone(phone.store.data);data.libraryBooks[0].readingCompletion={finished:true,at:'2026-10-15T00:00:00Z'};await phone.api('/api/notebook',{version:phone.store.version,data},'PUT');assert.equal(phone.store.localTrash.length,1);assert.deepEqual(phone.store.drafts,{reader:{text:'未保存的草稿'}});
+ const view=await phone.module.mobileViewSnapshot();assert.equal(view.localTrash,undefined);const list=await phone.api('/api/notebook/maintenance');assert.equal(list.body.entries.length,1);
+ const restored=await phone.api('/api/notebook/maintenance',{version:phone.store.version,action:'restore',receiptId:first.body.receiptId,confirmed:true,confirmation:'删除'});assert.equal(restored.status,200);assert(restored.body.data.cards.some(c=>c.id==='parent'));assert(restored.body.data.libraryBooks[0].readingCompletion.finished);assert.equal(phone.store.localTrash.length,0);assert.equal(phone.store.sync.target,'cloud-a');
+});
+
+test('mobile maintenance rejects stale or unconfirmed changes without writing',async()=>{const p=device(),n=p.writes.length;assert.equal((await p.api('/api/notebook/maintenance',{version:0,action:'remove'})).status,409);assert.equal((await p.api('/api/notebook/maintenance',{version:7,action:'remove'})).status,500);assert.equal(p.writes.length,n);});
