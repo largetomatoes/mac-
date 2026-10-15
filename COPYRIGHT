@@ -1,24 +1,23 @@
-问间笔记 - 开源笔记软件
+问间笔记 — 源码公开笔记软件
 Copyright (C) 2026 西林sirens
 
 原版本地址：https://github.com/largetomatoes/mac-
 联系邮箱：liyibo2432023353@outlook.com
 
-本声明适用于本仓库中由西林sirens享有著作权的项目代码；已有的第三方
-代码、依赖、字体、数据及其他材料保留各自原有的版权与许可证。
-本声明不将第三方材料的著作权转移给西林sirens。
+对由权利人有权许可并明确附带本许可提供的项目材料，适用：
+《问间源码公开与商业发行许可 v1.0》，全文见 LICENSE。
+SPDX-License-Identifier: LicenseRef-Wenjian-Source-Available-Commercial-Distribution-1.0
 
-本程序是自由软件：你可以再分发之，并/或依照自由软件基金会发布的
-GNU 通用公共许可证（GPL）第 3 版或（你的选择）任何更新版本的条款修改之。
+个人学习、研究、学术创作，以及公司或组织内部使用、部署和修改允许免费进行；
+使用者可以发表或出售其独立创作成果。私人及组织内部修改不必公开。
+免费对外发行须提供对应完整源码、构建说明和修改记录，沿用同一许可。
+转售软件、收费托管、嵌入收费产品、付费解锁或软件内广告变现，须先取得书面授权。
+商业授权不自动允许闭源、移除署名或使用原版图标。
 
-本程序的发布是希望它有用，但没有任何担保；甚至没有适销性或
-特定用途适用性的默示担保。详情请见 GNU 通用公共许可证。
+作者署名及衍生身份说明见 ADDITIONAL_TERMS.md，品牌政策见 TRADEMARK.md，
+贡献安排见 CONTRIBUTING.md，源码构建及发行说明见 BUILDING.md。
+在适用法律允许范围内，本软件按现状提供，不作担保；责任限制详见 LICENSE。
 
-你应当随本程序收到了 GNU 通用公共许可证的副本；全文见本仓库 LICENSE。
-如果没有，请参阅 <https://www.gnu.org/licenses/>。
-
-本项目依照 GPL 第 7 条声明的合理作者署名、修改标识及商标保留事项，
-见 ADDITIONAL_TERMS.md；名称与视觉标识的使用政策见 TRADEMARK.md。
-项目原创品牌图像不适用上述代码许可证，其具体范围与许可见 TRADEMARK.md。
-
-SPDX-License-Identifier: GPL-3.0-or-later
+已有第三方材料保留各自版权与许可证，不因本声明转移给西林sirens。
+依赖注意事项见 THIRD_PARTY_NOTICES.md；既有 GPL 权利不被追溯取消，
+历史声明见 licenses/legacy/gpl-2026-10-15/README.md。

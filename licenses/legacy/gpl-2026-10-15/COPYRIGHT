@@ -1,0 +1,24 @@
+问间笔记 - 开源笔记软件
+Copyright (C) 2026 西林sirens
+
+原版本地址：https://github.com/largetomatoes/mac-
+联系邮箱：liyibo2432023353@outlook.com
+
+本声明适用于本仓库中由西林sirens享有著作权的项目代码；已有的第三方
+代码、依赖、字体、数据及其他材料保留各自原有的版权与许可证。
+本声明不将第三方材料的著作权转移给西林sirens。
+
+本程序是自由软件：你可以再分发之，并/或依照自由软件基金会发布的
+GNU 通用公共许可证（GPL）第 3 版或（你的选择）任何更新版本的条款修改之。
+
+本程序的发布是希望它有用，但没有任何担保；甚至没有适销性或
+特定用途适用性的默示担保。详情请见 GNU 通用公共许可证。
+
+你应当随本程序收到了 GNU 通用公共许可证的副本；全文见本仓库 LICENSE。
+如果没有，请参阅 <https://www.gnu.org/licenses/>。
+
+本项目依照 GPL 第 7 条声明的合理作者署名、修改标识及商标保留事项，
+见 ADDITIONAL_TERMS.md；名称与视觉标识的使用政策见 TRADEMARK.md。
+项目原创品牌图像不适用上述代码许可证，其具体范围与许可见 TRADEMARK.md。
+
+SPDX-License-Identifier: GPL-3.0-or-later
