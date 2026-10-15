@@ -2,6 +2,28 @@
 
 问间是围绕使用者自己的核心问题组织问题、回答、卡片、阅读笔记和文稿的本地应用。想法可以先留在卡片集中，之后再连接到一个或多个问题；搜索可以直接找到某条思考、回应或书中的笔记。
 
+## 许可证与名称、标识
+
+Copyright (C) 2026 西林sirens。原版本：[largetomatoes/mac-](https://github.com/largetomatoes/mac-)。
+
+本项目中由作者享有著作权的代码采用 [GPL-3.0-or-later](LICENSE)：
+
+- 可以使用、研究、修改和再分发，也可以商用。
+- 分发受 GPL 约束的修改版时，应按 GPL 提供相应源代码，保留许可证及版权声明；
+  私人修改不必因此公开，普通网络托管本身也不等同于分发。
+- 合理作者署名和修改标识见 [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md)，
+  项目版权与无担保声明见 [COPYRIGHT](COPYRIGHT)。
+- 依赖、第三方代码及资源保留其原有版权和许可证。
+
+“问间”名称和项目原创 Logo、应用图标等品牌图像不随代码许可证授权，
+具体范围及官方原样再分发许可见 [TRADEMARK.md](TRADEMARK.md)。
+修改版可完全重新命名；非商业衍生版使用“问间”字样时应增加区分性前后缀，
+并表明衍生身份。原版图标及商业品牌使用需取得相应授权；准确说明来源和
+合理指称不受额外限制。
+
+仅使用代码商用不需要另行购买许可。品牌授权及项目联系请通过
+[仓库议题](https://github.com/largetomatoes/mac-/issues) 发起。
+
 ## 下载与安装
 
 3.14 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.14 发布说明](RELEASE_NOTES_3.14.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/mac-/releases) 的实际附件为准。
