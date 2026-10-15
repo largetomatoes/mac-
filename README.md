@@ -21,8 +21,8 @@ Copyright (C) 2026 西林sirens。原版本：[largetomatoes/mac-](https://githu
 并表明衍生身份。原版图标及商业品牌使用需取得相应授权；准确说明来源和
 合理指称不受额外限制。
 
-仅使用代码商用不需要另行购买许可。品牌授权及项目联系请通过
-[仓库议题](https://github.com/largetomatoes/mac-/issues) 发起。
+仅使用代码商用不需要另行购买许可。品牌授权及项目联系邮箱：
+[liyibo2432023353@outlook.com](mailto:liyibo2432023353@outlook.com)。
 
 ## 下载与安装
 

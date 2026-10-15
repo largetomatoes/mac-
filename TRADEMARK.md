@@ -2,7 +2,7 @@
 
 权利人：西林sirens
 原版本地址：<https://github.com/largetomatoes/mac->
-授权联系：<https://github.com/largetomatoes/mac-/issues>
+授权联系：[liyibo2432023353@outlook.com](mailto:liyibo2432023353@outlook.com)
 
 “问间”名称及本项目原创 Logo、应用图标、品牌启动图，由西林sirens保留其
 依法享有的名称、商标及图像著作权。本政策不声称该名称已取得商标注册，
@@ -68,7 +68,7 @@ GPL 不因此允许将受其约束的衍生代码分发为闭源产品。
 该要求仅涉及依法保留的品牌及图像权利，不是对代码商用的收费或许可门槛。
 准确说明来源、合理指称及其他法律允许的使用不受额外限制。
 
-请通过 [仓库议题](https://github.com/largetomatoes/mac-/issues) 发起授权联系，
+请发送邮件至 [liyibo2432023353@outlook.com](mailto:liyibo2432023353@outlook.com) 发起授权联系，
 并由权利人确认授权范围。
 
 ## 责任与适用范围
