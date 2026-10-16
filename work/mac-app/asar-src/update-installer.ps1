@@ -4,6 +4,7 @@ $job=Get-Content -LiteralPath $Config -Raw -Encoding UTF8 | ConvertFrom-Json
 if($job.platform -ne 'win32' -or [IO.Path]::GetDirectoryName($Config) -ne $job.directory){throw 'Invalid update configuration'}
 # Leave the application directory before moving it; Windows holds a CWD handle.
 Set-Location -LiteralPath $job.directory
+[System.Environment]::CurrentDirectory=$job.directory
 $backup=$job.target+'.wenjian-previous-'+$job.nonce
 $stage=Join-Path $job.directory ('stage-'+$job.nonce)
 $moved=$false
