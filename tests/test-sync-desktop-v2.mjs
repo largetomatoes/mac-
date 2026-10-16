@@ -4,7 +4,7 @@ function load(file,imports,extra={}){const m={exports:{}};vm.runInNewContext(ts.
 const equality=load('lib/value-equal.ts');const core=load('lib/sync/core.ts',{});const hash=t=>createHash('sha256').update(t).digest('hex');
 function device(name,data=initial){const d={store:{version:0,syncRevision:0,data:structuredClone(data),sync:{...core.newSyncState(),enabled:true}},backups:0,events:[]};const imports={'../value-equal':equality,'./core':core,'../notebook':{initialNotebook:initial}},proto={};imports['./protocol']=proto;
  const api=load('lib/sync/client.ts',imports,{window:{dispatchEvent:e=>d.events.push(e)},fetch:async(url,init={})=>{const body=init.body?JSON.parse(init.body):{},route=url.split('/').at(-1);let result,status=200;
- if(route==='identity')result={configured:true,verified:true,protocol:2,deviceName:name,target:'fake-library'};
+ if(route==='identity')result={configured:true,verified:true,protocol:2,deviceName:name,autoPaused:!!d.autoPaused,target:'fake-library'};
  else if(route==='local')result=structuredClone(d.store);
  else if(route==='backup-local'){d.backups++;result={backupPath:'virtual-test-backup'};}
  else if(route==='commit'){if(body.version!==d.store.version||(body.syncRevision||0)!==d.store.syncRevision){status=409;result={error:'concurrent save'};}else{d.store={version:d.store.version+(core.stable(d.store.data)===core.stable(body.data)?0:1),syncRevision:d.store.syncRevision+1,data:structuredClone(body.data),sync:structuredClone(body.sync)};result=structuredClone(d.store);}}
@@ -86,3 +86,7 @@ await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>
 objects.set('lease.json',JSON.stringify({owner:'same-name-other-token',until:Date.now()+600000,deviceName:'Android test'}));await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>{}),/正在同步/);assert.equal(JSON.parse(objects.get('lease.json')).owner,'same-name-other-token','same device name is never sufficient proof');
 objects.set('lease.json',JSON.stringify({owner:'dead-local-task',until:Date.now()+600000}));await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>{throw Error('simulated job failure')}),/simulated job failure/);assert(endings.at(-1).released&&!endings.at(-1).succeeded);
 console.log('PASS: exact prior task recovery, conditional ownership, device-name-only rejection, foreign live task protection and failed-job cleanup');
+
+// A held Android must run its proven recovery path even when notes are unchanged.
+let recovered=0;mac.autoPaused=true;mac.protocol.setLeaseRecovery({begin:async()=>({recoverableOwners:[],deviceName:'虚构 Android'}),end:async(target,owner,released,succeeded)=>{if(released&&succeeded){mac.autoPaused=false;recovered++;}}});await mac.api.syncNow();assert.equal(recovered,1,'manual retry cannot bypass recovery via the idle shortcut');assert.equal(mac.autoPaused,false);mac.protocol.setLeaseRecovery(undefined);
+console.log('PASS: unchanged manual recovery clears Android hold through a completed owned task');

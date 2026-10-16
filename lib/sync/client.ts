@@ -25,13 +25,13 @@ let running:Promise<Envelope>|null=null;
 export type SyncMode='join'|'merge'|'local';
 export function syncNow(onProgress?:(progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{if(running)return mode?Promise.reject(Error('另一项同步正在进行，请完成后再选择资料库基准。')):running;running=run(onProgress,mode,rootId).finally(()=>{running=null;});return running;}
 async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{
- const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number;paused?:boolean;pausedReason?:string}>('identity');
+ const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number;autoPaused?:boolean;paused?:boolean;pausedReason?:string}>('identity');
  if(config.paused)throw Error(config.pausedReason||'当前为 Mac 本地试用，跨端同步暂缓。');
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
  if(config.protocol===2){
   // An idle check must not rewrite lease.json, the notebook or its backup.
   // Read immutable journal names first; acquire the writer lease only for work.
-  if(!mode){
+  if(!mode&&!config.autoPaused){
    const snapshot=await syncApi<Envelope>('local'),state=snapshot.sync;
    if(state?.lastSync&&state.target===config.target&&!state.pending.length&&jsonEqual(project(snapshot.data),state.observed)){
     const {manifest}=await readManifest(config.target);
