@@ -83,13 +83,14 @@ async function prepare() {
   await cp(spaDist, path.join(resourceStage, 'static'), { recursive: true });
   await cp(path.join(projectRoot,'assets/fonts'),path.join(resourceStage,'static/fonts'),{recursive:true});
   await cp(path.join(projectRoot,'components/windows-fonts.css'),path.join(resourceStage,'static/fonts/windows-fonts.css'));
+  await cp(path.join(projectRoot,'components/windows-reader-fonts.js'),path.join(resourceStage,'static/fonts/windows-reader-fonts.js'));
   // Windows 版额外带入「云端导入备份」向导（2.1.2+cloudimport 引入的功能）。
   const wizard = path.join(spaRoot, 'cloud-import.js');
   await requireFile(wizard);
   await cp(wizard, path.join(resourceStage, 'static', 'assets', 'cloud-import.js'));
   const htmlPath = path.join(resourceStage, 'static', 'index.html');
   const html = await readFile(htmlPath, 'utf8');
-  if (!html.includes('cloud-import.js')) await writeFile(htmlPath, html.replace('</body>', '<script charset="utf-8" src="/assets/cloud-import.js"></script></body>'), 'utf8');
+  if (!html.includes('cloud-import.js')) await writeFile(htmlPath, html.replace('</body>', '<script charset="utf-8" src="/fonts/windows-reader-fonts.js"></script><script charset="utf-8" src="/assets/cloud-import.js"></script></body>'), 'utf8');
   const dependencies = ['pdf-lib', 'pako', 'tslib', '@pdf-lib/standard-fonts', '@pdf-lib/upng'];
   for (const dependency of dependencies) {
     await cp(path.join(macAppRoot, 'node_modules', dependency), path.join(stage, 'node_modules', dependency), { recursive: true });

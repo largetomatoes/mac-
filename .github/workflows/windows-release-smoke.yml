@@ -6,6 +6,9 @@ on:
         description: Draft or published Release to verify
         required: true
         default: v3.14-build321
+      packages:
+        description: Optional short-lived download URLs for these public software packages only
+        required: false
 permissions:
   contents: read
 jobs:
@@ -22,11 +25,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE_DOWNLOADS: ${{ inputs.packages }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v3\.[0-9]+-build[0-9]+$') { throw 'Invalid release tag' }
           New-Item -ItemType Directory -Force package-test | Out-Null
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*Windows-x64-Setup.exe' --pattern '*Windows-x64.zip' --dir package-test
-          if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
+          if ($env:PACKAGE_DOWNLOADS) {
+            $items=@($env:PACKAGE_DOWNLOADS | ConvertFrom-Json)
+            if ($items.Count -ne 2) { throw 'Exactly two software packages are required' }
+            foreach ($item in $items) {
+              Write-Output "::add-mask::$($item.url)"
+              $uri=[uri]$item.url
+              if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'release-assets.githubusercontent.com' -or $uri.UserInfo -or $uri.Port -ne 443) { throw 'Invalid package host' }
+              if ($item.name -notmatch '^Wenjian-3[.][0-9]+-build[0-9]+-Windows-x64(?:-Setup[.]exe|[.]zip)$' -or $item.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid software package identity' }
+              $destination=Join-Path package-test $item.name
+              Invoke-WebRequest $uri -OutFile $destination
+              if ((Get-FileHash $destination -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.sha256) { throw 'Package checksum mismatch' }
+            }
+          } else {
+            gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern '*Windows-x64-Setup.exe' --pattern '*Windows-x64.zip' --dir package-test
+            if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
+          }
       - name: Install, replace existing installation, launch and preserve data through uninstall
         shell: pwsh
         run: ./scripts/test-windows-install.ps1 -ArtifactDirectory package-test
