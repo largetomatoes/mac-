@@ -34,3 +34,18 @@ for(const [platform,arch,suffix] of [['android','universal','Android.apk'],['dar
  assert.equal(selectUpdate([{...release,assets:[]}],{version:'3.14',build:'317',platform,arch}).state,'missing');
 }
 console.log('PASS: same-version build upgrades for Mac, Windows and Android; current/ahead builds and missing artifacts handled');
+
+assert.equal(module.exports.RELEASES_API,'https://api.github.com/repos/largetomatoes/wenjian-software/releases?per_page=30');
+assert.equal(module.exports.RELEASES_PAGE,'https://github.com/largetomatoes/wenjian-software/releases');
+for(const repo of ['wenjian-software','mac-']){
+ const base=`https://github.com/largetomatoes/${repo}/releases`;
+ assert(module.exports.validReleaseUrl(base));
+ for(const [platform,arch,suffix]of [['darwin','arm64','macOS-arm64.zip'],['win32','x64','Windows-x64.zip'],['android','universal','Android.apk']]){
+  const name=`Wenjian-3.14-build320-${suffix}`,url=base+'/download/v3.14/'+name;
+  const release={tag_name:'v3.14',html_url:base+'/tag/v3.14',body:'<!-- wenjian-build:320 -->',assets:[{name,browser_download_url:url,state:'uploaded'}]};
+  assert.equal(selectUpdate([release],{version:'3.14',build:'319',platform,arch}).download,url);
+  assert.equal(selectUpdate([release],{version:'3.14',build:'320',platform,arch}).state,'current');
+ }
+}
+for(const bad of ['https://github.com/largetomatoes/wenjian-software-other/releases','https://github.com/other/wenjian-software/releases','http://github.com/largetomatoes/wenjian-software/releases','https://user:secret@github.com/largetomatoes/wenjian-software/releases','https://github.com:444/largetomatoes/wenjian-software/releases','https://github.com/largetomatoes/wenjian-software/releases/download/v3.14/a%2Fb.zip','https://github.com/largetomatoes/wenjian-software/releases?url=evil'])assert.equal(module.exports.validReleaseUrl(bad),false,bad);
+console.log('PASS: renamed and historical repository releases accepted on three platforms, lookalike sources rejected');

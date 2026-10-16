@@ -38,13 +38,13 @@ public class WenjianStoragePlugin extends Plugin {
     private static byte[] read(InputStream stream,long max)throws Exception{try(InputStream in=stream;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[65536];int n;long total=0;while((n=in.read(buffer))!=-1){total+=n;if(total>max)throw new IOException("文件超出读取限额");out.write(buffer,0,n);}return out.toByteArray();}}
     private void atomic(File target,byte[] bytes)throws Exception{AtomicFile file=new AtomicFile(target);FileOutputStream out=null;try{out=file.startWrite();out.write(bytes);file.finishWrite(out);}catch(Exception error){if(out!=null)file.failWrite(out);throw error;}}
     @PluginMethod public void appReleases(PluginCall call){run(network,call,()->{
-        HttpsURLConnection conn=(HttpsURLConnection)new URL("https://api.github.com/repos/largetomatoes/mac-/releases?per_page=30").openConnection();
+        HttpsURLConnection conn=(HttpsURLConnection)new URL("https://api.github.com/repos/largetomatoes/wenjian-software/releases?per_page=30").openConnection();
         conn.setConnectTimeout(8000);conn.setReadTimeout(8000);conn.setInstanceFollowRedirects(false);conn.setRequestProperty("User-Agent","Wenjian-Update-Check");conn.setRequestProperty("Accept","application/vnd.github+json");
         try{int status=conn.getResponseCode();if(status!=200)throw new IOException(status==403||status==429?"更新检查达到访问限额，请稍后重试。":"未能读取正式发布信息，请稍后重试。");JSONArray releases=new JSONArray(new String(read(conn.getInputStream(),4L*1024*1024),StandardCharsets.UTF_8));return new JSObject().put("releases",releases);}catch(SocketTimeoutException e){throw new IOException("连接发布服务器超时，请稍后重试。");}finally{conn.disconnect();}
     });}
     @PluginMethod public void openRelease(PluginCall call){
         String value=call.getString("url");
-        try{URI uri=new URI(value==null?"":value);String p=uri.getPath();if(!"https".equals(uri.getScheme())||!"github.com".equals(uri.getHost())||uri.getPort()!=-1||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||p==null||!(p.equals("/largetomatoes/mac-/releases")||p.startsWith("/largetomatoes/mac-/releases/tag/")||p.startsWith("/largetomatoes/mac-/releases/download/")))throw new Exception("发布链接无效");
+        try{URI uri=new URI(value==null?"":value);String p=uri.getPath();if(!"https".equals(uri.getScheme())||!"github.com".equals(uri.getHost())||uri.getPort()!=-1||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||p==null||!(p.equals("/largetomatoes/mac-/releases")||p.startsWith("/largetomatoes/mac-/releases/tag/")||p.startsWith("/largetomatoes/mac-/releases/download/")||p.equals("/largetomatoes/wenjian-software/releases")||p.startsWith("/largetomatoes/wenjian-software/releases/tag/")||p.startsWith("/largetomatoes/wenjian-software/releases/download/")))throw new Exception("发布链接无效");
             getActivity().runOnUiThread(()->{try{getActivity().startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(value)));call.resolve(new JSObject().put("ok",true));}catch(Exception e){call.reject("未能打开浏览器，请检查系统浏览器。");}});
         }catch(Exception e){call.reject("发布链接无效");}
     }

@@ -22,3 +22,10 @@ test('same-version build uses its immutable manifest and refuses a different sig
  const bad=createUpdater({...options,directory:path.join(root,'other')});bad.start('3.14',312);assert.equal((await wait(bad)).state,'failed');assert.match(bad.status().error,/构建号/);
  assert.throws(()=>good.start('3.14',310),/构建号/);
 });
+
+test('renamed repository retains signed legacy packages without trusting other repositories',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'wenjian-renamed-update-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const bytes=zip(),base='https://github.com/largetomatoes/wenjian-software/releases/download/v3.14/';
+ for(const repo of ['wenjian-software','mac-'])assert.equal(verifyManifest(envelope(bytes,{url:'https://github.com/largetomatoes/'+repo+'/releases/download/v3.14/Wenjian.zip'}),'win32','x64',310,'3.14',keys.publicKey).manifest.build,311);
+ for(const url of ['https://github.com/largetomatoes/wenjian-software-evil/releases/download/v3.14/Wenjian.zip','https://github.com/other/wenjian-software/releases/download/v3.14/Wenjian.zip','https://github.com/largetomatoes/wenjian-software/releases/download/v3.141/Wenjian.zip'])assert.throws(()=>verifyManifest(envelope(bytes,{url}),'win32','x64',310,'3.14',keys.publicKey),/来源/);
+ const updater=createUpdater({directory:root,build:310,platform:'win32',arch:'x64',verificationKey:keys.publicKey,releases:async()=>[{...release,assets:[{name:'update-manifest-311.json',state:'uploaded',browser_download_url:base+'update-manifest-311.json'}]}],getJson:async url=>{assert.equal(url,base+'update-manifest-311.json');return envelope(bytes,{url:base+'Wenjian.zip'});},responseFor:async url=>{assert.equal(url,base+'Wenjian.zip');return [bytes];}});updater.start('3.14',311);assert.equal((await wait(updater)).state,'ready');
+});

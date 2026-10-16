@@ -2,7 +2,7 @@
 
 权利人：西林sirens
 
-原版本地址：<https://github.com/largetomatoes/mac->
+原版本地址：<https://github.com/largetomatoes/wenjian-software>
 
 授权联系：[liyibo2432023353@outlook.com](mailto:liyibo2432023353@outlook.com)
 

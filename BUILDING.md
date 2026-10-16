@@ -7,7 +7,7 @@
 ## 获取确切源码
 
 ```sh
-git clone https://github.com/largetomatoes/mac-.git
+git clone https://github.com/largetomatoes/wenjian-software.git
 cd mac-
 git checkout <发行页面标明的完整提交或标签>
 npm ci
@@ -142,3 +142,9 @@ Android 可在 `android` 目录运行 `./gradlew :app:lintRelease :app:testRelea
 ## 验证
 
 `npx tsc --noEmit --incremental false`；`node tests/test-app-updates.mjs`；`node --test tests/test-app-updater.cjs tests/test-update-installer.cjs`；`node tests/test-sync-desktop-v2.mjs`；`node tests/test-organization-archives.mjs`。其他阅读、卡片、编码、备份及手机 API 回归位于 `tests`。使用虚构资料，避免测试连接个人云账号。
+
+## 3.14（320）仓库迁移维护
+
+对应标签为`v3.14-build320`，公开版本3.14、桌面buildVersion/CFBundleVersion与Android versionCode均为320。软件仓库`largetomatoes/wenjian-software`，官网仓库`largetomatoes/wenjian-web`。更新来源直接使用新仓库，历史下载只允许新旧两个指定仓库，继续验证签名和摘要。
+
+发行附件名使用`Wenjian-3.14-build320-平台`，另附`update-manifest-320.json`，发行说明首行标记`<!-- wenjian-build:320 -->`。历史319清单及安装包保持不变。320来源和变更范围见`RELEASE_NOTES_3.14_320.md`。319及更早客户端须手动覆盖升级一次。

@@ -1,8 +1,9 @@
 const https=require('node:https');
 const fs=require('node:fs/promises');
 const jobs=new Map();
-const RELEASES_API='https://api.github.com/repos/largetomatoes/mac-/releases?per_page=30';
-function allowedReleaseUrl(value){try{const url=new URL(value);return url.protocol==='https:'&&url.hostname==='github.com'&&!url.port&&!url.username&&!url.password&&!url.search&&!url.hash&&(url.pathname==='/largetomatoes/mac-/releases'||url.pathname.startsWith('/largetomatoes/mac-/releases/tag/')||url.pathname.startsWith('/largetomatoes/mac-/releases/download/'));}catch{return false;}}
+const RELEASES_API='https://api.github.com/repos/largetomatoes/wenjian-software/releases?per_page=30';
+const roots=['/largetomatoes/wenjian-software/releases','/largetomatoes/mac-/releases'];
+function allowedReleaseUrl(value){try{const url=new URL(value);return url.protocol==='https:'&&url.hostname==='github.com'&&!url.port&&!url.username&&!url.password&&!url.search&&!url.hash&&roots.some(root=>url.pathname===root||url.pathname.startsWith(root+'/tag/')||url.pathname.startsWith(root+'/download/'))&&!/%2f|%5c/i.test(url.pathname);}catch{return false;}}
 function publicReleases(){return new Promise((resolve,reject)=>{
  const request=https.get(RELEASES_API,{headers:{'User-Agent':'Wenjian-Update-Check','Accept':'application/vnd.github+json'}},response=>{
   if(response.statusCode!==200){response.resume();return reject(Error(response.statusCode===403||response.statusCode===429?'更新检查达到访问限额，请稍后重试。':'未能读取正式发布信息，请稍后重试。'));}

@@ -6,7 +6,7 @@
 ## 再发行时保留的信息
 
 - 问间笔记 — Copyright (C) 2026 西林sirens
-- 原版本地址：<https://github.com/largetomatoes/mac->
+- 原版本地址：<https://github.com/largetomatoes/wenjian-software>
 - 当前许可文本及原有适用的第三方版权声明
 
 交互式对外发行版可以在启动画面、欢迎页、“设置 → 关于”或等效的
@@ -20,7 +20,7 @@
 >
 > 原作者：西林sirens（Copyright (C) 2026）
 >
-> 原版本地址：https://github.com/largetomatoes/mac-
+> 原版本地址：https://github.com/largetomatoes/wenjian-software
 >
 > 本版本由其实际维护者修改与支持，并非官方版本；具体维护者、版本和
 > 修改记录由该发行版准确列明。

@@ -285,7 +285,7 @@ public class WenjianStoragePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
 
     @objc func appReleases(_ call: CAPPluginCall) {
         network.async {
-            var request = URLRequest(url: URL(string: "https://api.github.com/repos/largetomatoes/mac-/releases?per_page=30")!)
+            var request = URLRequest(url: URL(string: "https://api.github.com/repos/largetomatoes/wenjian-software/releases?per_page=30")!)
             request.timeoutInterval = 8
             request.setValue("Wenjian-Update-Check", forHTTPHeaderField: "User-Agent")
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -322,7 +322,10 @@ public class WenjianStoragePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                 && url.password == nil && url.query == nil && url.fragment == nil
                 && (path == "/largetomatoes/mac-/releases"
                     || path.hasPrefix("/largetomatoes/mac-/releases/tag/")
-                    || path.hasPrefix("/largetomatoes/mac-/releases/download/"))
+                    || path.hasPrefix("/largetomatoes/mac-/releases/download/")
+                    || path == "/largetomatoes/wenjian-software/releases"
+                    || path.hasPrefix("/largetomatoes/wenjian-software/releases/tag/")
+                    || path.hasPrefix("/largetomatoes/wenjian-software/releases/download/"))
             guard valid else {
                 call.reject("发布链接无效")
                 return

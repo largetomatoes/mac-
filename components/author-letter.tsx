@@ -26,7 +26,7 @@ export function AuthorLetter(){
    <p><strong>第二，我为所有记录都加上了精确的时间戳。</strong> 我希望每一次思考都有迹可循。当你回过头梳理脉络时，时间戳能帮你唤起当时的环境与状态——知道自己为何而想，对认识我们自己同样大有裨益。</p>
    <p>软件的开篇不宜冗长，关于具体的功能演示与后续更新，大家可以移步我的 Bilibili 观看操作视频。</p>
    <p>最后，我要郑重感谢我的舍友和网友。虽然最初只有寥寥数人，但当我带着点小得意把雏形展示给他们时，他们那种“我一定要用上”的迫切态度，给了我巨大的动力。没有他们的功能建议与发布指导，我大概很难坚持把它打磨到今天。</p>
-   <p>「问间」是一款开源免费软件（当前版本为：<strong>问间·圆周率版</strong>），开源协议与代码均托管在我的 <a href="https://github.com/largetomatoes/mac-/releases" target="_blank" rel="noreferrer">GitHub 发布页</a>，有需要的朋友完全可以按照自己的习惯去二次开发、定制功能。</p>
+   <p>「问间」是一款开源免费软件（当前版本为：<strong>问间·圆周率版</strong>），开源协议与代码均托管在我的 <a href="https://github.com/largetomatoes/wenjian-software/releases" target="_blank" rel="noreferrer">GitHub 发布页</a>，有需要的朋友完全可以按照自己的习惯去二次开发、定制功能。</p>
    <p>我们身处一个呼啸而来的 AI 时代。希望大家都能借助新的技术“搓”出称手的好工具；更希望「问间」能成为你阅读与思考的一片净土，祝你在这里有所收获，更好地发现自己！</p>
    <div className="author-letter-signature"><p>西林（sirens）</p><time dateTime="2026-10-16">2026年10月16日</time></div>
   </article>
