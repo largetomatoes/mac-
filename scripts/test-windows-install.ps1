@@ -10,7 +10,7 @@ if((Test-Path $installed) -or (Test-Path $data)){throw 'This test requires an em
 $report=[ordered]@{platform='Windows';installer=$setup[0].Name;checks=@()}
 function Check($condition,$label){if(-not $condition){throw $label};$script:report.checks+=@($label)}
 function Launch($exe){
- $app=Start-Process -FilePath $exe -PassThru
+ $app=Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=0' -PassThru
  for($i=0;$i -lt 120;$i++){
   Start-Sleep -Milliseconds 500
   $ports=@(Get-NetTCPConnection -State Listen -OwningProcess $app.Id -ErrorAction SilentlyContinue)
@@ -32,6 +32,8 @@ try{
  $run=Launch $portableExe.FullName
  $book=Invoke-RestMethod ($run.origin+'/api/notebook')
  Check ($book.data.cards.id -contains 'installation-fixture') 'Portable version reads existing AppData notebook'
+ & node scripts/test-windows-fonts.cjs $data $artifacts
+ if($LASTEXITCODE -ne 0){throw 'Actual Windows font rendering verification failed'}
  CloseApp $run.app
  $install=Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
  Check ($install.ExitCode -eq 0) 'Silent installation succeeds without administrator privileges'
