@@ -48,7 +48,7 @@ node webapp/preview.mjs
 npm run build:web-app
 ```
 
-`build:pwa` 先构建阅读端，再生成图标、manifest、带内容版本的 Service Worker 和可托管的静态资源。`npm run build:web-app` 在隔离目录构建受限 WebDAV 服务，输出到 `webapp/host-dist/`，不覆盖桌面端构建；公开入口不要求 ChatGPT 登录；无 D1 / R2，不创建公共笔记库。
+`build:pwa` 先构建阅读端，再生成图标、manifest、带内容版本的 Service Worker 和可托管的静态资源。`npm run build:web-app` 在隔离目录构建受限 WebDAV 服务，输出到 `webapp/host-dist/`，不覆盖桌面端构建；公开入口不要求 ChatGPT 登录；无 D1 / R2，不创建公共笔记库。该产物是标准 Cloudflare Worker（静态资源 + `/api/webdav` 同源中转），用 `npm run deploy:web-app` 发布到自有 Cloudflare 账号。
 
 `webapp/test-browser.cjs` 只使用虚构账号、内存模拟网盘和脚本生成的 PDF，测试首次接入、按需下载、离线重开、卡片与草稿保存、恢复联网后同步及手机布局。测试使用本机已安装 Chrome；可通过 `WENJIAN_PLAYWRIGHT_PATH` 指向已安装的 Playwright 包、`WENJIAN_BROWSER_PATH` 指向浏览器可执行文件。
 
@@ -64,6 +64,10 @@ Web 专用入口和平台适配位于 `webapp/main.tsx`、`webapp/platform.ts`�
 
 公共入口不等于共用资料库。不同浏览器分别保存本机资料；使用自己的坚果云邮箱和第三方应用密码。换账户前需保留已有内容，不会自动混合两个账户。
 
-公开入口：https://wenjian-ios-reader.liyibo2432023353.chatgpt.site
+公开入口（作者自有 Cloudflare Workers）：https://reader.wenjian-app.workers.dev/read/
 
-宿主构建：`npm run build:web-app`。静态客户端预览：`npm run build:pwa && npm run preview:web-app`。仅将静态文件上传 GitHub Pages 不能提供 WebDAV 中转；必须同时部署宿主的 `/api/webdav`。
+旧的临时 Sites 地址停止作为主入口。换网址意味着 IndexedDB 与 Service Worker 属于新来源：在旧地址先「导出笔记与草稿」，在新地址用同一坚果云接入（笔记随同步合并，书籍原件按需重下），不要清除旧站数据。
+
+`workers.dev` 免费域名面向中国大陆不保证可达，可能需要代理；如需稳定大陆访问，后续可绑定自有域名或另寻国内托管。
+
+宿主构建：`npm run build:web-app`。部署到自己的 Cloudflare 账号：先 `npx wrangler login` 并在账号中注册 workers.dev 子域，再运行 `npm run deploy:web-app`（可用 `WENJIAN_WORKER_NAME=xxx` 指定 Worker 名，默认 `reader`）。静态客户端预览：`npm run build:pwa && npm run preview:web-app`。仅将静态文件上传 GitHub Pages 不能提供 WebDAV 中转；必须同时部署宿主的 `/api/webdav`。
