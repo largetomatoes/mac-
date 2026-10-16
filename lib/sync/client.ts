@@ -20,7 +20,8 @@ let running:Promise<Envelope>|null=null;
 export type SyncMode='join'|'merge'|'local';
 export function syncNow(onProgress?:(progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{if(running)return mode?Promise.reject(Error('另一项同步正在进行，请完成后再选择资料库基准。')):running;running=run(onProgress,mode,rootId).finally(()=>{running=null;});return running;}
 async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootId?:string):Promise<Envelope>{
- const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number}>('identity');
+ const config=await syncApi<{target:string;configured:boolean;verified?:boolean;protocol?:number;paused?:boolean;pausedReason?:string}>('identity');
+ if(config.paused)throw Error(config.pausedReason||'当前为 Mac 本地试用，跨端同步暂缓。');
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
  if(config.protocol===2){
   // An idle check must not rewrite lease.json, the notebook or its backup.
@@ -30,7 +31,7 @@ async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootI
    if(state?.lastSync&&state.target===config.target&&!state.pending.length&&stable(project(snapshot.data))===stable(state.observed)){
     const {manifest}=await readManifest(config.target);
     if(manifest&&state.libraryId!==manifest.libraryId)throw Error('本机与云端不是同一资料库，请核对后接入。');
-    if(manifest&&manifest.schema===3&&(state.epoch||'legacy')===manifest.epoch){
+    if(manifest&&manifest.schema===4&&(state.epoch||'legacy')===manifest.epoch){
      const listing=await syncApi<{keys:string[]}>('remote',{action:'list',target:config.target,epoch:manifest.epoch}),received=new Set(state.received);
      if(listing.keys.every(key=>received.has(key))){const latest=await syncApi<Envelope>('local');if(latest.version===snapshot.version&&(latest.syncRevision||0)===(snapshot.syncRevision||0))return latest;}
     }
@@ -41,8 +42,9 @@ async function run(progress?: (progress:SyncProgress)=>void,mode?:SyncMode,rootI
  return runJournal(progress);
 }
 async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy',renew?:(force?:boolean)=>Promise<void>,expectedTarget?:string):Promise<Envelope>{
- const config=await syncApi<{target:string;configured:boolean;verified?:boolean;deviceName?:string;protocol?:number}>('identity');
+ const config=await syncApi<{target:string;configured:boolean;verified?:boolean;deviceName?:string;protocol?:number;paused?:boolean;pausedReason?:string}>('identity');
  let snapshot=await syncApi<Envelope>('local'),state=snapshot.sync||newSyncState();
+ if(config.paused)throw Error(config.pausedReason||'当前为 Mac 本地试用，跨端同步暂缓。');
  if(!config.configured)throw Error('请先连接同步服务。');if(config.verified===false)throw Error('请先检查连接，通过后再开始同步。');
  if((expectedTarget&&expectedTarget!==config.target)||(state.target&&state.target!==config.target))throw Error('连接的资料库已改变，请在连接设置中处理。');
  const protocol=config.protocol===2?await readManifest(config.target):null;

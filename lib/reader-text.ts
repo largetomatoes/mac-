@@ -32,6 +32,10 @@ export function ocrScaleFor(width:number,height:number){return Math.min(300/72,M
 export function groupNoteAnchors<T>(entries:Array<{item:T;y:number}>,height:number,gap=32){const groups:Array<{items:T[];y:number}>=[];for(const entry of [...entries].sort((a,b)=>a.y-b.y)){const y=Math.max(16,Math.min(Math.max(16,height-16),entry.y));const last=groups.at(-1);if(last&&y-last.y<gap)last.items.push(entry.item);else groups.push({items:[entry.item],y});}return groups;}
 
 export function ocrPixelGray(r:number,g:number,b:number){return Math.min(r,g,b)>100?Math.max(r,g,b):Math.round(.299*r+.587*g+.114*b);}
+export function rotateNormalizedRect(rect:{x:number;y:number;width:number;height:number},rotation=0){
+ const box=unrotateOcrBox({x0:rect.x,y0:rect.y,x1:rect.x+rect.width,y1:rect.y+rect.height},(360-rotation)%360);
+ return {x:box.x0,y:box.y0,width:box.x1-box.x0,height:box.y1-box.y0};
+}
 export function unrotateOcrBox(box:{x0:number;y0:number;x1:number;y1:number},rotation=0){
  switch(rotation){case 90:return {x0:box.y0,y0:1-box.x1,x1:box.y1,y1:1-box.x0};case 180:return {x0:1-box.x1,y0:1-box.y1,x1:1-box.x0,y1:1-box.y0};case 270:return {x0:1-box.y1,y0:box.x0,x1:1-box.y0,y1:box.x1};default:return box;}
 }

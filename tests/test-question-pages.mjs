@@ -5,11 +5,11 @@ import cp from 'node:child_process';
 import ts from 'typescript';
 import {load,plain} from './load-ts.cjs';
 import settings from '../lib/notebook-settings.cjs';
-const model=load('lib/notebook.ts'),sync=load('lib/sync/core.ts');
+const model=load('lib/notebook.ts'),sync=load('lib/sync/core.ts'),org=load('lib/page-organization.cjs');
 const base=model.normalize(model.changeCoreQuestion(plain(model.initialNotebook),'原始大问题'));
 assert.equal(model.pagesOf(base).length,1);assert.equal(base.notes[0].id,'world');
 const a=model.addQuestionPage(base,'语言问题',[],'language'),b=model.addQuestionPage(a.data,'诚实问题',[],'honesty');
-const data={...b.data,notes:[...b.data.notes,{...b.data.notes[0],id:'language-sub',parent:'language',title:'表达方式',order:1,revisions:[],thoughts:[]}]};
+const data=org.registerPageAdditions(b.data,{...b.data,notes:[...b.data.notes,{...b.data.notes[0],id:'language-sub',parent:'language',title:'表达方式',order:1,revisions:[],thoughts:[]}]},a.page.id);
 const c=model.addQuestionPage(data,'汇总问题',[a.page.id,b.page.id],'collection');
 assert.equal(settings.validSettings(c.data),true);assert.equal(settings.validateCoreTransition(base,c.data),'');
 const view=model.pageView(c.data,c.page.id);
@@ -19,7 +19,7 @@ assert.equal(model.numberOf(view.notes.find(n=>n.id==='language-sub'),view.notes
 assert.equal(model.pageForRecord(c.data,'language-sub').id,a.page.id);
 const updated=model.changeCoreQuestion(c.data,'语言与表达','重新表述','2026-10-14T00:00:00Z','language');
 assert.equal(settings.validateCoreTransition(c.data,updated),'');assert.equal(model.pageView(updated,c.page.id).notes.find(n=>n.id==='language').title,'语言与表达');
-assert.throws(()=>model.addQuestionPage(data,'汇总',[a.page.id]),/至少两个/);
+const single=model.addQuestionPage(data,'重新整理',[a.page.id]);assert(single.page.placements.some(p=>p.recordId==='language-sub'));
 const invalid={...c.data,questionPages:c.data.questionPages.map(p=>p.id===c.page.id?{...p,members:[p.id]}:p)};assert.equal(settings.validSettings(invalid),false);
 let state=sync.capture(sync.newSyncState('page-device'),c.data);const merged=sync.materialize(state,base);assert.equal(merged.data.questionPages.length,4);assert.equal(merged.data.notes.length,c.data.notes.length);
 const edited={...c.data,questionPages:c.data.questionPages.map(p=>p.id===c.page.id?{...p,members:[b.page.id,a.page.id]}:p)};state=sync.capture(state,edited);assert.equal(sync.materialize(state,c.data).data.questionPages.find(p=>p.id===c.page.id).members[0],b.page.id);
@@ -30,5 +30,5 @@ console.log('PASS: old library preserved, multiple roots, reference collection, 
 
 const thoughtData={...data,notes:data.notes.map(n=>n.id==='language-sub'?{...n,thoughts:[{id:'later',text:'稍后想到',at:'',origin:'自己的思考'}]}:n),cards:[{id:'card-linked',text:'卡片',questionId:'language-sub',thoughts:[]}],thoughtReplies:[{id:'later-reply',thoughtId:'later',text:'回答',at:''}]};
 for(const id of ['later','later-reply','card-linked'])assert.equal(model.pageForRecord(thoughtData,id).id,a.page.id);
-const legacyCross={...thoughtData,crossThoughts:[{id:'legacy-cross',order:1,title:'交叉',anchorIds:['later','world'],anchorRevisions:[],thoughts:[]}]};assert.equal(model.pageView(legacyCross,a.page.id).crossThoughts.length,1);
+const legacyCross={...thoughtData,crossThoughts:[{id:'legacy-cross',order:1,title:'交叉',anchorIds:['later','world'],anchorRevisions:[],thoughts:[]}]};assert.equal(model.pageView(model.normalize({...legacyCross,organizationVersion:undefined,questionPages:legacyCross.questionPages.map(({placements,...p})=>p)}),a.page.id).crossThoughts.length,1);
 console.log('PASS: nested thoughts, replies, linked cards and legacy crosses retain page ownership');

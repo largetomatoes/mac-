@@ -77,6 +77,7 @@ async function prepare() {
   await mkdir(resourceStage, { recursive: true });
   await cp(path.join(macAppRoot, 'asar-src'), stage, { recursive: true });
   await cp(path.join(projectRoot,'lib/maintenance.cjs'),path.join(stage,'maintenance.cjs'));
+  for(const file of ['page-organization.cjs','record-archives.cjs'])await cp(path.join(projectRoot,'lib',file),path.join(stage,file));
   await cp(path.join(projectRoot, 'lib/notebook-settings.cjs'), path.join(stage, 'notebook-settings.cjs'));
   await cp(path.join(projectRoot, 'lib/ocr-cache.cjs'), path.join(stage, 'ocr-cache.cjs'));
   await cp(spaDist, path.join(resourceStage, 'static'), { recursive: true });

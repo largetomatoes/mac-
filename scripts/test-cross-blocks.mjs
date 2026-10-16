@@ -1,3 +1,4 @@
+import domainLoader from '../tests/load-ts.cjs';
 import ocrCache from '../lib/ocr-cache.cjs';
 import settings from '../lib/notebook-settings.cjs';
 import fs from 'node:fs';
@@ -11,9 +12,9 @@ function load(file, imports){
  vm.runInNewContext(code,{module:loadedModule,exports:loadedModule.exports,require:name=>{if(!(name in imports))throw Error(name);return imports[name];},Response,console});
  return loadedModule.exports;
 }
-const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts',{})});
+const notebook=domainLoader.load('lib/notebook.ts');
 const fixture=modelFixture();function modelFixture(){const data=structuredClone(notebook.initialNotebook);data.setupCompleted=true;data.zoteroEnabled=true;data.notes.push({...structuredClone(data.notes[0]),id:'language',parent:'world',title:'测试子问题'});return data;}
-const deletion=load('lib/deletion.ts',{'./notebook':notebook});
+const deletion=domainLoader.load('lib/deletion.ts');
 let state={version:0,content:JSON.stringify(fixture)};
 const DB={prepare(sql){
  return {bind(...args){
@@ -81,14 +82,13 @@ next=read();next.crossThoughts[0].anchorIds=['world','missing'];next.crossThough
 next=read();next.crossThoughts[0].thoughts=[];await put(next,400);
 next=read();next.readingNotes[0].quote='覆盖';await put(next,400);
 await put(read(),409,0);
-const r=await api.DELETE(new Request('http://test/api/notebook',{method:'DELETE',body:JSON.stringify({id:'child',title:'子板块',version:state.version,confirmed:true,confirmation:'删除'})}));assert.equal(r.status,200);
-assert.equal(read().crossThoughts.length,1);assert.equal(read().readingNotes.length,1);
-assert.deepEqual(read().thoughtReplies.map(r=>r.id),['reply']);
-assert.equal(read().crossThoughts[0].anchorRevisions.at(-1).reason,'关联板块被删除');
-assert.equal(read().notes.some(n=>n.id==='cross-child'),true);
+const beforeDelete=state.content;
+const r=await api.DELETE(new Request('http://test/api/notebook',{method:'DELETE',body:JSON.stringify({id:'child',title:'子板块',version:state.version,confirmed:true,confirmation:'删除'})}));assert.equal(r.status,400);
+assert.equal(state.content,beforeDelete,'the legacy destructive endpoint must not corrupt new page placements');
+assert.equal(read().notes.some(n=>n.id==='child'),true);
 await put(read());
-next=read();next.crossThoughts[0].anchorRevisions.push({from:['world'],to:['world','language'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['world','language'];await put(next);
+next=read();next.crossThoughts[0].anchorRevisions.push({from:['world','child'],to:['world','language'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['world','language'];await put(next);
 assert.equal(read().crossThoughts[0].thoughts.length,1);
 next=read();next.crossThoughts.push({id:'cross-2',order:2,title:'由关联主题继续生长',anchorIds:['cross','world'],anchorRevisions:[],text:'',origin:'自己的思考',source:'',at:'today',thoughts:[]});await put(next);
 next=read();next.crossThoughts[0].anchorRevisions.push({from:['world','language'],to:['language','cross-2'],at:'later',reason:'手动调整关联板块'});next.crossThoughts[0].anchorIds=['language','cross-2'];await put(next,400);
-console.log('PASS: legacy repair, create, readings, append, single replies with timestamps, branches, cross-theme anchors, cycle checks, conflicts and deletion preservation');
+console.log('PASS: legacy repair, create, readings, append, single replies with timestamps, branches, cross-theme anchors, cycle checks, conflicts and destructive deletion protection');

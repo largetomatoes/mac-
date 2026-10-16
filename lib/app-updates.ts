@@ -3,7 +3,7 @@ export const RELEASES_PAGE='https://github.com/largetomatoes/mac-/releases';
 export const PREVIEW_VERSION='3.14';
 export type AppInfo={version:string;build:string;platform:'android'|'darwin'|'win32';arch:string};
 export type Release={tag_name:string;html_url:string;body?:string;published_at?:string;draft?:boolean;prerelease?:boolean;assets?:{name:string;browser_download_url:string;state?:string}[]};
-export type UpdateResult={state:'available'|'current'|'ahead'|'missing'|'empty';version?:string;release?:Release;download?:string};
+export type UpdateResult={state:'available'|'current'|'ahead'|'missing'|'empty';version?:string;build?:number;release?:Release;download?:string};
 export const PI_RELEASE_DIGITS='14159265358979323846264338327950288419716939937510';
 export function versionParts(value:string){
  const text=value.trim().replace(/^v/,'');
@@ -19,8 +19,12 @@ export function selectUpdate(releases:Release[],info:AppInfo):UpdateResult {
  if(!Array.isArray(releases)||!versionParts(info.version))throw Error('更新信息格式不正确');
  const formal=releases.filter(release=>!release.draft&&!release.prerelease&&versionParts(release.tag_name)&&validReleaseUrl(release.html_url)).sort((a,b)=>compareVersions(b.tag_name,a.tag_name));
  const latest=formal[0];if(!latest)return {state:'empty'};
- const version=latest.tag_name.replace(/^v/,''),comparison=compareVersions(version,info.version);
+ const version=latest.tag_name.replace(/^v/,''),build=releaseBuild(latest),baseComparison=compareVersions(version,info.version),comparison=baseComparison|| (build?Math.sign(build-(Number(info.build)||0)):0);
  const suffix=info.platform==='android'?'Android.apk':info.platform==='darwin'?`macOS-${info.arch}.zip`:`Windows-${info.arch}.zip`;
- const asset=latest.assets?.find(item=>item.name===`Wenjian-${version}-${suffix}`&&item.state==='uploaded'&&validReleaseUrl(item.browser_download_url)&&new URL(item.browser_download_url).pathname.startsWith('/largetomatoes/mac-/releases/download/'+encodeURIComponent(latest.tag_name)+'/'));
- return {state:comparison<0?'ahead':comparison===0?'current':asset?'available':'missing',version,release:latest,download:asset?.browser_download_url};
+ const name=build?`Wenjian-${version}-build${build}-${suffix}`:`Wenjian-${version}-${suffix}`;
+ const asset=latest.assets?.find(item=>item.name===name&&item.state==='uploaded'&&validReleaseUrl(item.browser_download_url)&&new URL(item.browser_download_url).pathname.startsWith('/largetomatoes/mac-/releases/download/'+encodeURIComponent(latest.tag_name)+'/'));
+ return {state:comparison<0?'ahead':comparison===0?'current':asset?'available':'missing',version,build:build||undefined,release:latest,download:asset?.browser_download_url};
 }
+// Discovery metadata is public; the native updater separately verifies the
+// signed manifest, build number, package identity and file hash before install.
+export function releaseBuild(release:Release){const value=/<!--\s*wenjian-build:(\d+)\s*-->/.exec(release.body||'')?.[1],build=Number(value);return Number.isSafeInteger(build)&&build>0?build:0;}

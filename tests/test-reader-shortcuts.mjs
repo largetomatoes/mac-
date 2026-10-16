@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+const module={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/reader-shortcuts.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports});
+const {sharedSelectionPressed:pressed,normalizeReaderShortcuts:normalize,clearReaderSelections:clear}=module.exports;
+assert.equal(normalize(null).sharedSelection,'Alt');assert.equal(normalize({sharedSelection:'Shift'}).sharedSelection,'Alt');assert.equal(normalize({sharedSelection:'Meta'}).sharedSelection,'Meta');
+assert(pressed({altKey:true},'Alt'));assert(pressed({metaKey:true},'Meta'));
+for(const event of [{shiftKey:true},{altKey:true,shiftKey:true},{ctrlKey:true,altKey:true},{altKey:true,metaKey:true},undefined])assert.equal(pressed(event,'Alt'),false);
+let outer=0,left=0,right=0;clear({getSelection:()=>({removeAllRanges(){outer++;}}),querySelectorAll:()=>[{contentDocument:{getSelection:()=>({removeAllRanges(){left++;}})}},{contentDocument:{getSelection:()=>({removeAllRanges(){right++;}})}}]});
+assert.equal(outer,1);assert.equal(left,1);assert.equal(right,1);
+console.log('PASS: Option/Command only, Shift never starts shared collection, clearing native selections covers both PDF panes and EPUB frames.');

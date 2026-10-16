@@ -1,5 +1,8 @@
+const {archiveRecords,archiveQuestionBranch,restoreArchived,archiveGroups,purgeArchiveBatch}=require('./record-archives.cjs');
 const {removeRecords,maintenanceReceipt,restoreMaintenance}=require('./maintenance.cjs');
 const {parseJsonUtf8}=require('./text-encoding.cjs');
+const ORGANIZATION_TRIAL=process.platform==='darwin'&&require('./package.json').organizationTrial===true;
+const TRIAL_SYNC_NOTICE='Mac 本地试用：新结构暂不写入共享云库。Windows、Android 适配后统一恢复同步；请使用完整备份保存试用期间的资料。';
 const RELEASE_VERSION=require('./package.json').releaseVersion||require('./package.json').version;
 const {detachThoughtBook}=require('./book-thought-sources.cjs');
 const { validSettings, validateCoreTransition, validateReadingTransition } = require('./notebook-settings.cjs');
@@ -218,24 +221,18 @@ async function handleMaintenance(request,response){
  if(request.headers?.origin&&request.headers.origin!==`http://127.0.0.1:${localPort}`||request.headers?.['sec-fetch-site']==='cross-site')return jsonReply(response,403,{error:'无效请求来源'});
  try{
   const current=await readStore(),trash=current.localTrash||[];
-  if(request.method==='GET')return jsonReply(response,200,{entries:trash.map(({id,at,label,count})=>({id,at,label,count})).reverse()});
+  if(request.method==='GET')return jsonReply(response,200,{entries:[...archiveGroups(current.data),...trash.map(({id,at,label,count})=>({id,at,label:'旧版恢复副本 · '+label,count})).reverse()]});
   if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份，请稍候。'});
   const input=await requestBody(request);
   if(input.version!==current.version)return jsonReply(response,409,{error:'资料刚有修改，请重新选择记录。'});
   if(input.confirmed!==true||input.confirmation!==(input.action==='purge'?'永久清除':'删除'))return jsonReply(response,400,{error:'请先核对操作范围。'});
   let data=current.data,localTrash=trash,receiptId=null;
   if(input.action==='restore'||input.action==='purge'){
-   const receipt=trash.find(r=>r.id===input.receiptId);if(!receipt)throw Error('恢复副本已变化，请重新打开最近删除。');
-   if(input.action==='restore')data=restoreMaintenance(data,receipt);
-   localTrash=trash.filter(r=>r.id!==receipt.id);
+   const archived=archiveGroups(current.data).some(r=>r.id===input.receiptId);
+   if(archived)data=input.action==='restore'?restoreArchived(data,input.receiptId):purgeArchiveBatch(data,input.receiptId,removeRecords);
+   else {const receipt=trash.find(r=>r.id===input.receiptId);if(!receipt)throw Error('恢复副本已变化。');if(input.action==='restore')data=restoreMaintenance(data,receipt);localTrash=trash.filter(r=>r.id!==receipt.id);}
   }else{
-   const targets=input.targets||(input.target?[input.target]:[]);
-   data=removeRecords(data,targets,{preserveThoughts:input.preserveThoughts!==false,id:()=>crypto.randomUUID()});
-   receiptId=crypto.randomUUID();
-   const first=targets[0],book=current.data.libraryBooks.find(b=>b.id===first?.bookId||b.id===current.data.readingNotes.find(n=>n.id===first?.id)?.libraryBookId||b.id===current.data.libraryHighlights.find(n=>n.id===first?.id)?.libraryBookId);
-   const receipt=maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:book?(book.display?.title||book.title)+' · 所选记录':'所选笔记与标注',count:targets.length});
-   localTrash=[...trash,receipt];
-   if(Buffer.byteLength(JSON.stringify(localTrash),'utf8')>48*1024*1024)throw Error('恢复副本空间已满，请先在最近删除中恢复或清除不需要的副本。尚未删除任何内容。');
+   const targets=input.targets||(input.target?[input.target]:[]);receiptId=crypto.randomUUID();data=archiveRecords(data,targets,{batchId:receiptId});
   }
   if(!validNotebookData(data))throw Error('操作结果无法验证，未修改资料。');
   await writeStore({...current,version:current.version+1,data,localTrash},current);
@@ -266,11 +263,8 @@ async function handleApi(request, response) {
     if (request.method === 'DELETE') {
       const target = current.data.notes.find((note) => note.id === input.id);
       if (!input.confirmed || input.confirmation !== '删除' || !target || target.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
-      const data = deleteQuestion(current.data, input.id);
-      const receiptId=crypto.randomUUID(),receipt=maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:'问题分支 · '+target.title,count:current.data.notes.length-data.notes.length});
-      const localTrash=[...(current.localTrash||[]),receipt];
-      if(Buffer.byteLength(JSON.stringify(localTrash),'utf8')>48*1024*1024)throw Error('最近删除空间已满，未删除问题。');
-      await writeStore({ version: current.version + 1, data,localTrash },current);
+      const receiptId=crypto.randomUUID(),data=archiveQuestionBranch(current.data,input.id,{batchId:receiptId});
+      await writeStore({version:current.version+1,data},current);
       return jsonReply(response, 200, { version: current.version + 1, data,receiptId });
     }
     return jsonReply(response, 405, { error: '不支持的操作。' });
@@ -349,50 +343,18 @@ async function handleAnnotatedPdfExport(request, response) {
     return jsonReply(response, 500, { error: '批注版 PDF 没有生成，请重试。' });
   }
 }
-async function handleLibraryDelete(request, response) {
-  let stagedFile = null;
-  let originalFile = null;
-  try {
-    if (request.method !== 'DELETE') return jsonReply(response, 405, { error: '不支持的操作。' });
-    if (restoringBackup) return jsonReply(response, 423, { error: '正在恢复备份，请稍候。' });
-    const input = await requestBody(request);
-    const current = await readStore();
-    if (!Number.isInteger(input.version) || input.version !== current.version) return jsonReply(response, 409, { error: '另一窗口已保存新内容。请先重新载入。' });
-	    const book = current.data.libraryBooks.find((entry) => entry.id === input.id);
-    if (!input.confirmed || input.confirmation !== '删除' || !book || book.title !== input.title) return jsonReply(response, 400, { error: '请完成两步删除确认。' });
-    if (typeof book.storedFile !== 'string' || path.basename(book.storedFile) !== book.storedFile || (book.storedFile && !/\.(pdf|epub)$/i.test(book.storedFile)) || (!book.storedFile && book.format !== 'reference')) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
-    const sharedOriginal = current.data.libraryBooks.some((entry) => entry.id !== book.id && entry.storedFile === book.storedFile);
-    if (book.storedFile && !sharedOriginal) {
-      originalFile = path.join(libraryDir, book.storedFile);
-      const originalStat = await fsp.lstat(originalFile).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-      if (originalStat && !originalStat.isFile()) return jsonReply(response, 400, { error: '书籍文件记录不正确。' });
-      stagedFile = `${originalFile}.deleting-${crypto.randomUUID()}`;
-      try { await fsp.rename(originalFile, stagedFile); } catch (error) { if (error.code !== 'ENOENT') throw error; stagedFile = null; }
-    }
-	    const replacementBook = book.storedFile && current.data.libraryBooks.find((entry) => entry.id !== book.id && entry.storedFile === book.storedFile);
-	    const data = {
-      ...current.data,
-      dismissedSuggestions: book.zotero ? [...new Set([...current.data.dismissedSuggestions, `zotero:${encodeURIComponent(book.zotero.serverId)}:${encodeURIComponent(book.zotero.itemKey)}`])] : current.data.dismissedSuggestions,
-      libraryBooks: current.data.libraryBooks.filter((entry) => entry.id !== book.id),
-      libraryHighlights: current.data.libraryHighlights.filter((entry) => entry.libraryBookId !== book.id),
-      ocrCache: current.data.ocrCache.filter((entry) => entry.libraryBookId !== book.id),
-	      readingNotes: current.data.readingNotes.map((note) => {
-        if (note.libraryBookId !== book.id) return note;
-        const kept = { ...note };
-        delete kept.libraryBookId;
-        delete kept.sourceLocation;
-        return kept;
-	      }),
-	      bookThoughts: current.data.bookThoughts.map(entry=>detachThoughtBook(entry,book.id,replacementBook?.id,current.data.libraryBooks.filter(item=>item.id!==book.id).map(item=>item.id)))
-    };
-    await writeStore({ version: current.version + 1, data },current);
-    if (stagedFile) await fsp.unlink(stagedFile).catch(() => {});
-    return jsonReply(response, 200, { version: current.version + 1, data });
-  } catch (error) {
-    if (stagedFile && originalFile) await fsp.rename(stagedFile, originalFile).catch(() => {});
-    console.error(error);
-    return jsonReply(response, 500, { error: '书籍没有删除，请重试。' });
-  }
+async function handleLibraryDelete(request,response){
+ try{
+  if(request.method!=='DELETE')return jsonReply(response,405,{error:'不支持的操作。'});
+  if(restoringBackup)return jsonReply(response,423,{error:'正在恢复备份，请稍候。'});
+  const input=await requestBody(request),current=await readStore();
+  if(input.version!==current.version)return jsonReply(response,409,{error:'另一窗口已保存新内容，请重新核对。'});
+  const book=current.data.libraryBooks.find(b=>b.id===input.id);
+  if(!input.confirmed||input.confirmation!=='删除'||!book||book.title!==input.title)return jsonReply(response,400,{error:'请完成书籍归档确认。'});
+  const data=archiveRecords(current.data,[{kind:'book',id:book.id}]);
+  await writeStore({version:current.version+1,data},current);
+  return jsonReply(response,200,{version:current.version+1,data});
+ }catch(error){console.error(error);return jsonReply(response,500,{error:'书籍尚未归档，原资料仍保留。'});}
 }
 async function handleLibraryFile(request, response, pathname) {
   try {
@@ -739,9 +701,10 @@ async function handleDeviceSync(request,response,url) {
   try {
     const route=url.pathname.slice('/api/sync/'.length);
     if(route==='revision')return jsonReply(response,200,await readStoreRevision());
-    if(route==='identity')return jsonReply(response,200,await syncIdentity());
+    if(route==='identity')return jsonReply(response,200,{...await syncIdentity(),...(ORGANIZATION_TRIAL?{paused:true,pausedReason:TRIAL_SYNC_NOTICE}:{})});
     if(route==='local')return jsonReply(response,200,{...await readStore(),storage:storageMode});
     const input=await requestBody(request);
+    if(ORGANIZATION_TRIAL&&['remote','commit','backup-restore','detach'].includes(route))return jsonReply(response,423,{error:TRIAL_SYNC_NOTICE});
     if(route==='connect')return jsonReply(response,200,await checkSyncConnection(input));
     if(route==='detach')return await serializeNotebook(async()=>jsonReply(response,200,await detachSyncConnection(input.target)));
     if(route==='settings')return await serializeNotebook(async()=>jsonReply(response,200,await saveSyncConnection(input)));
@@ -770,6 +733,7 @@ async function handleDeviceSync(request,response,url) {
       const book=(await readStore()).data.libraryBooks.find(b=>b.id===input.id);if(!book||!['pdf','epub'].includes(book.format)||!book.storedFile||path.basename(book.storedFile)!==book.storedFile)throw new Error('未找到书籍原文件。');
       const destination=path.join(libraryDir,book.storedFile);
       if(input.action==='status'){const stat=await fsp.stat(destination).catch(error=>error.code==='ENOENT'?null:Promise.reject(error));return jsonReply(response,200,{available:!!stat?.isFile()&&stat.size>0&&(!book.cloudFile||stat.size===book.cloudFile.size)});}
+      if(ORGANIZATION_TRIAL)return jsonReply(response,423,{error:input.action==='download'?'本机还没有这本书的原件。跨端同步恢复后可下载，已有本地书籍仍可直接阅读。':TRIAL_SYNC_NOTICE});
       const client=await active();
       if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
       if(input.action==='upload'){
@@ -802,7 +766,7 @@ async function handleAppUpdates(request,response,url){
     if(pathname==='/api/app/update'){
       const updater=appUpdater();if(request.method==='GET')return jsonReply(response,200,updater.status());
       const input=await requestBody(request);
-      if(input.action==='download')return jsonReply(response,200,updater.start(input.version));
+      if(input.action==='download')return jsonReply(response,200,updater.start(input.version,input.build));
       if(input.action==='cancel')return jsonReply(response,200,updater.cancel());
       if(input.action==='install'){
         if(cloudBusy||restoringBackup)throw Error('另一项资料操作正在执行，请稍后安装。');

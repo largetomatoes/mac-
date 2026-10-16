@@ -1,3 +1,4 @@
+import {processEntries} from './process-note-sources';
 import type {BookThought, BookThoughtSource, LibraryBook, Notebook, ReadingNote} from './notebook';
 
 export type BookNote = {kind:'process'; note:ReadingNote} | {kind:'reading'; note:BookThought; source?:BookThoughtSource};
@@ -15,7 +16,7 @@ export function noteBook(entry:BookNote, books:LibraryBook[]):LibraryBook|undefi
 }
 export function notebookBooks(data:Notebook):BookNotes[] {
  const groups=new Map<string,BookNotes>();
- const entries:BookNote[]=[...data.readingNotes.map(note=>({kind:'process' as const,note})),...data.bookThoughts.flatMap(note=>thoughtEntries(note))];
+ const entries:BookNote[]=[...data.readingNotes.flatMap(processEntries).map(note=>({kind:'process' as const,note})),...data.bookThoughts.flatMap(note=>thoughtEntries(note))];
  for(const entry of entries){
   const book=noteBook(entry,data.libraryBooks),title=tidy(book?.title||(entry.kind==='process'?entry.note.book:(entry.source?.bookTitle||entry.note.bookTitle)))||'未填写书名',author=book?.author||(entry.kind==='process'?entry.note.author:'');
   const key=book?'book:'+book.id:(entry.kind==='reading'?entry.source?.libraryBookId||entry.note.libraryBookId:entry.note.libraryBookId)?'missing:'+(entry.kind==='reading'?entry.source?.libraryBookId||entry.note.libraryBookId:entry.note.libraryBookId):'source:'+JSON.stringify([title,tidy(author)]);

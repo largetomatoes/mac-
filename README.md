@@ -1,3 +1,5 @@
+> 当前维护构建：**问间 3.14（319）**。三端下载与变更见 [发布说明](RELEASE_NOTES_3.14_319.md)，完整构建步骤见 [BUILDING.md](BUILDING.md)。旧 3.14 需手动覆盖升级一次，319 起支持同版本构建号更新。新云格式要求同步设备统一升级319。
+
 # 问间 · 3.14
 
 问间是围绕使用者自己的核心问题组织问题、回答、卡片、阅读笔记和文稿的本地应用。想法可以先留在卡片集中，之后再连接到一个或多个问题；搜索可以直接找到某条思考、回应或书中的笔记。
@@ -33,7 +35,7 @@ Copyright (C) 2026 西林sirens。原版本：[largetomatoes/mac-](https://githu
 
 ## 下载与安装
 
-3.14 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.14 发布说明](RELEASE_NOTES_3.14.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/mac-/releases) 的实际附件为准。
+3.14 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.14（319）发布说明](RELEASE_NOTES_3.14_319.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/mac-/releases) 的实际附件为准。
 
 从仓库的 **Releases** 下载对应系统的安装包。Mac（Apple 芯片）使用 `Wenjian-*-macOS-arm64.zip`，解压后把“问间”拖入“应用程序”；Windows x64 使用 `Wenjian-*-Windows-x64.zip`，解压后运行 `Wenjian.exe`。Android 8.0+ 使用 `Wenjian-*-Android.apk`，移动版以阅读和笔记为主；PDF 需要 WebView 111+。当前构建没有 Apple 公证或 Windows 商业代码签名，系统首次启动时可能要求手动允许。
 

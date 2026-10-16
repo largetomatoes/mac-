@@ -1,3 +1,5 @@
+import {load as fixtureLoad} from './load-ts.cjs';
+import {resolve as resolveTestPath,dirname as testDirname,extname as testExt} from 'node:path';
 import ocrCache from '../lib/ocr-cache.cjs';
 import settings from '../lib/notebook-settings.cjs';
 import fs from 'node:fs';
@@ -6,15 +8,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import {z} from 'zod';
 
-function load(file,imports={}) {
- const loaded={exports:{}};
- const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- vm.runInNewContext(code,{module:loaded,exports:loaded.exports,require:name=>{
-  if(!(name in imports))throw new Error(`Missing test import: ${name}`);
-  return imports[name];
- },Response,console});
- return loaded.exports;
-}
+function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(name in imports)return imports[name];const target=name.startsWith('@/')?resolveTestPath(name.slice(2)):resolveTestPath(testDirname(file),name);return fixtureLoad(testExt(target)?target:target+'.ts');},crypto:globalThis.crypto,structuredClone,URL,Response,Request,setTimeout,clearTimeout,console});return module.exports;}
 const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts')});
 const {mergeZoteroCatalog,zoteroIdentity,isReadingBook,libraryBooksForMode,collectionIdentity,zoteroCollectionTree,libraryBooksForZoteroCollection}=load('lib/zotero.ts',{'./notebook':notebook});
 const deletion=load('lib/deletion.ts',{'./notebook':notebook});

@@ -23,3 +23,14 @@ const sequence=['3.1','3.14','3.141','3.1415','3.14159','3.141592','3.1415926'];
 for(let i=1;i<sequence.length;i++){assert.equal(compareVersions(sequence[i],sequence[i-1]),1);assert.equal(module.exports.nextPiVersion(sequence[i-1]),sequence[i]);}
 assert.equal(versionParts('3.142'),null);
 console.log('PASS: pi-prefix release progression and legacy 3.01 ordering');
+
+for(const [platform,arch,suffix] of [['android','universal','Android.apk'],['darwin','arm64','macOS-arm64.zip'],['win32','x64','Windows-x64.zip']]){
+ const asset=`Wenjian-3.14-build319-${suffix}`,url=`${root}/download/v3.14/${asset}`;
+ const release={tag_name:'v3.14',html_url:root+'/tag/v3.14',body:'<!-- wenjian-build:319 -->',assets:[{name:asset,browser_download_url:url,state:'uploaded'}]};
+ assert.equal(selectUpdate([release],{version:'3.14',build:'317',platform,arch}).state,'available');
+ assert.equal(selectUpdate([release],{version:'3.14',build:'317',platform,arch}).download,url);
+ assert.equal(selectUpdate([release],{version:'3.14',build:'319',platform,arch}).state,'current');
+ assert.equal(selectUpdate([release],{version:'3.14',build:'320',platform,arch}).state,'ahead');
+ assert.equal(selectUpdate([{...release,assets:[]}],{version:'3.14',build:'317',platform,arch}).state,'missing');
+}
+console.log('PASS: same-version build upgrades for Mac, Windows and Android; current/ahead builds and missing artifacts handled');

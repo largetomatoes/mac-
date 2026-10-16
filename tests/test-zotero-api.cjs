@@ -44,6 +44,7 @@ async function harness(t, options = {}) {
   const opened = [], fileOperations = [], writes = [], catalogs = [], probes = [];
   let cancelledProbeBodies = 0;
   const context = vm.createContext({
+    archiveRecords:require('../lib/record-archives.cjs').archiveRecords,
     detachThoughtBook:require('../work/mac-app/asar-src/book-thought-sources.cjs').detachThoughtBook,
     localPort: 45555, restoringBackup: false, zoteroCatalogJob: null, libraryDir,
     path, crypto, URLSearchParams, AbortSignal, console: { error() {} },
@@ -186,7 +187,7 @@ test('API failures return a retryable error and failed catalog jobs are cleared'
   assert.equal((await h.request('/api/zotero/catalog')).status, 423);
 });
 
-test('removing a reference never renames its library directory and records a durable Zotero dismissal', async t => {
+test('archiving a reference preserves its library directory, identity and all original notes', async t => {
   const reference = book({ format: 'reference', storedFile: '', originalName: '' });
   const h = await harness(t, { books: [reference] });
   const note = { id: 'thought', libraryBookId: reference.id, sourceLocation: 'zotero:NOTE0001', text: 'My thought', questionIds: ['q1'] };
@@ -194,12 +195,12 @@ test('removing a reference never renames its library directory and records a dur
   const result = await h.remove();
   assert.equal(result.status, 200);
   assert.equal(h.store.version, 8);
-  assert.equal(h.store.data.libraryBooks.length, 0);
+  assert.equal(h.store.data.libraryBooks.length, 1);assert.equal(require('../lib/record-archives.cjs').visibleNotebook(h.store.data).libraryBooks.length,0);
   assert.deepEqual(h.fileOperations, []);
   assert.ok((await fsp.stat(h.libraryDir)).isDirectory());
-  assert.deepEqual(h.store.data.dismissedSuggestions, ['zotero:local%3Atest%2Flibrary:BOOK0001']);
+  assert.deepEqual(h.store.data.dismissedSuggestions, []);assert.equal(h.store.data.recordArchives[0].recordId,reference.id);
   assert.equal(h.store.data.bookThoughts[0].text, note.text);
-  assert.equal(h.store.data.bookThoughts[0].libraryBookId, undefined);
+  assert.equal(h.store.data.bookThoughts[0].libraryBookId, h.store.data.libraryBooks[0].id);
   assert.equal(h.store.data.readingNotes[0].interpretation, 'My interpretation');
 });
 
@@ -213,9 +214,9 @@ test('removing one attachment owner keeps a shared original readable and preserv
   assert.equal((await h.remove(original)).status, 200);
   assert.deepEqual(await fsp.readFile(path.join(h.libraryDir, original.storedFile)), bytes);
   assert.deepEqual(h.fileOperations, []);
-  assert.equal(h.store.data.libraryBooks[0].id, retained.id);
-  assert.equal(h.store.data.bookThoughts[0].libraryBookId, retained.id);
-  assert.deepEqual(h.store.data.libraryHighlights, [{ id: 'theirs', libraryBookId: retained.id }]);
+  assert.equal(require('../lib/record-archives.cjs').visibleNotebook(h.store.data).libraryBooks[0].id, retained.id);assert.equal(h.store.data.libraryBooks.length,2);
+  assert.equal(h.store.data.bookThoughts[0].libraryBookId, original.id);
+  assert.deepEqual(h.store.data.libraryHighlights, [{id:'mine',libraryBookId:original.id},{id:'theirs',libraryBookId:retained.id}]);
 });
 
 test('deleting an attachmentless reference never moves its thoughts to an unrelated reference', async t => {
@@ -225,9 +226,9 @@ test('deleting an attachmentless reference never moves its thoughts to an unrela
   ] });
   h.store = { ...h.store, data: { ...h.store.data, bookThoughts: [{ id: 'thought', libraryBookId: 'reference-a', text: 'A thought about the first reference' }] } };
   assert.equal((await h.remove()).status, 200);
-  assert.equal(h.store.data.bookThoughts[0].libraryBookId, undefined);
+  assert.equal(h.store.data.bookThoughts[0].libraryBookId, h.store.data.libraryBooks[0].id);
   assert.equal(h.store.data.bookThoughts[0].text, 'A thought about the first reference');
-  assert.equal(h.store.data.libraryBooks[0].id, 'reference-b');
+  assert.equal(require('../lib/record-archives.cjs').visibleNotebook(h.store.data).libraryBooks[0].id, 'reference-b');
 });
 
 test('failed notebook save restores the staged original and leaves source and dismissal unchanged', async t => {
@@ -252,14 +253,14 @@ test('stale or unconfirmed deletes do not touch originals or suppress future sou
   assert.deepEqual(h.store.data.dismissedSuggestions, []);
 });
 
-test('malformed file records cannot rename directories or symbolic links', async t => {
+test('archiving even malformed file metadata never accesses directories or symbolic links', async t => {
   for (const storedFile of ['.', '..', '../book.pdf', 'folder', 'folder.pdf', 'alias.pdf']) {
     const h = await harness(t, { books: [book({storedFile})] });
     if(storedFile === 'folder.pdf') await fsp.mkdir(path.join(h.libraryDir,storedFile));
     if(storedFile === 'alias.pdf') await fsp.symlink(h.libraryDir,path.join(h.libraryDir,storedFile));
-    assert.equal((await h.remove()).status,400,storedFile);
+    assert.equal((await h.remove()).status,200,storedFile);
     assert.deepEqual(h.fileOperations,[]);
-    assert.deepEqual(h.writes,[]);
+    assert.equal(h.writes.length,1);assert.equal(h.store.data.recordArchives[0].kind,'book');
     assert.ok((await fsp.stat(h.libraryDir)).isDirectory());
   }
 });

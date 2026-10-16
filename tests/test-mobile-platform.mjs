@@ -1,3 +1,5 @@
+import organization from '../lib/page-organization.cjs';
+import archives from '../lib/record-archives.cjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -17,7 +19,7 @@ function load(file,imports={},globals={}){
  return module.exports;
 }
 const folders=load('lib/library-folders.ts');
-const notebook=load('lib/notebook.ts',{'./library-folders':folders});
+const notebook=load('lib/notebook.ts',{'./library-folders':folders,'./page-organization.cjs':organization});
 const core=load('lib/sync/core.ts');
 const updates=load('lib/app-updates.ts');
 const original={id:'book-1',title:'中文书籍 📖',author:'测试作者',format:'pdf',storedFile:'中文原件.pdf',originalName:'中文原件.pdf',addedAt:'2026-10-13T00:00:00.000Z',progress:{page:3},inReadingLibrary:true};
@@ -35,7 +37,7 @@ function device(){
  const window={fetch:async()=>{throw Error('unexpected external request');}};
  state.module=load('mobile/platform.ts',{
   '@capacitor/app':{App:{}},'@capacitor/core':{Capacitor:{isNativePlatform:()=>true,convertFileSrc:uri=>uri},registerPlugin:name=>{assert.equal(name,'WenjianStorage');return native;}},
-  '../lib/notebook-settings.cjs':settings,'../lib/maintenance.cjs':maintenance,'../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
+  '../lib/record-archives.cjs':archives,'../lib/notebook-settings.cjs':settings,'../lib/maintenance.cjs':maintenance,'../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
   '../lib/reader-platform':{setReaderPlatform:platform=>{state.reader=platform;}},
  },{window,location:{origin:'https://localhost'}});
  state.module.installMobileApi();
@@ -61,7 +63,7 @@ test('mobile idle saves, notebook PUT, identical drafts and sync commits do not 
 
 test('mobile real edits persist once, while stale notebook/sync CAS writes are rejected',async()=>{
  const phone=device(),before=await phone.module.mobileSnapshot(),changed=structuredClone(before.data);
- changed.notes[0].body='在安卓端继续写下中文与 emoji 📝';
+ changed.notes[0].revisions.push({title:changed.notes[0].title,body:changed.notes[0].body,origin:changed.notes[0].origin,source:changed.notes[0].source,reason:'保留修改前的记录',at:new Date().toISOString()});changed.notes[0].body='在安卓端继续写下中文与 emoji 📝';
  const saved=await phone.api('/api/notebook',{version:before.version,data:changed},'PUT');
  assert.equal(saved.status,200);assert.equal(saved.body.version,8);assert.equal(phone.writes.length,1);
  const repeated=await phone.api('/api/notebook',{version:saved.body.version,data:saved.body.data},'PUT');
@@ -105,7 +107,7 @@ test('mobile successful upload merges into the latest notebook and preserves con
  const phone=device(),transfer=phone.deferTransfer(),pending=phone.api('/api/sync/book',{id:original.id,action:'upload'});
  await transfer.started;
  const before=await phone.module.mobileSnapshot(),changed=structuredClone(before.data);
- changed.notes[0].body='传输过程中写下的思考';changed.libraryBooks[0].progress.page=10;
+ changed.notes[0].revisions.push({title:changed.notes[0].title,body:changed.notes[0].body,origin:changed.notes[0].origin,source:changed.notes[0].source,reason:'保留修改前的记录',at:new Date().toISOString()});changed.notes[0].body='传输过程中写下的思考';changed.libraryBooks[0].progress.page=10;
  const local=await phone.api('/api/notebook',{version:before.version,data:changed},'PUT');assert.equal(local.status,200);
  transfer.finish();const result=await pending;
  assert.equal(result.status,200);assert.deepEqual(result.body.cloudFile,cloudFile);
@@ -134,10 +136,10 @@ test('mobile reading view avoids copying sync history while native history remai
 
 test('mobile maintenance batch preserves children, recovery history, later writes and sync state',async()=>{
  const phone=device();phone.store.data.cards=[{id:'parent',text:'原话',thoughts:[{id:'child',text:'后续思考'}]},{id:'other',text:'其他卡片',thoughts:[]}];phone.store.data.thoughtReplies=[{id:'reply',thoughtId:'child',text:'回答'}];
- const first=await phone.api('/api/notebook/maintenance',{version:7,action:'remove',targets:[{kind:'card',id:'parent'}],confirmed:true,confirmation:'删除'});assert.equal(first.status,200);assert.equal(phone.store.localTrash.length,1);assert(phone.store.data.cards.some(c=>c.thoughts.some(t=>t.id==='child')));assert.equal(phone.store.data.thoughtReplies.length,1);
- const data=structuredClone(phone.store.data);data.libraryBooks[0].readingCompletion={finished:true,at:'2026-10-15T00:00:00Z'};await phone.api('/api/notebook',{version:phone.store.version,data},'PUT');assert.equal(phone.store.localTrash.length,1);assert.deepEqual(phone.store.drafts,{reader:{text:'未保存的草稿'}});
+ const first=await phone.api('/api/notebook/maintenance',{version:7,action:'remove',targets:[{kind:'card',id:'parent'}],confirmed:true,confirmation:'删除'});assert.equal(first.status,200);assert.equal(archives.archiveGroups(phone.store.data).length,1);assert(phone.store.data.cards.some(c=>c.thoughts.some(t=>t.id==='child')));assert.equal(phone.store.data.thoughtReplies.length,1);
+ const data=structuredClone(phone.store.data);data.libraryBooks[0].readingCompletion={finished:true,at:'2026-10-15T00:00:00Z'};await phone.api('/api/notebook',{version:phone.store.version,data},'PUT');assert.equal(archives.archiveGroups(phone.store.data).length,1);assert.deepEqual(phone.store.drafts,{reader:{text:'未保存的草稿'}});
  const view=await phone.module.mobileViewSnapshot();assert.equal(view.localTrash,undefined);const list=await phone.api('/api/notebook/maintenance');assert.equal(list.body.entries.length,1);
- const restored=await phone.api('/api/notebook/maintenance',{version:phone.store.version,action:'restore',receiptId:first.body.receiptId,confirmed:true,confirmation:'删除'});assert.equal(restored.status,200);assert(restored.body.data.cards.some(c=>c.id==='parent'));assert(restored.body.data.libraryBooks[0].readingCompletion.finished);assert.equal(phone.store.localTrash.length,0);assert.equal(phone.store.sync.target,'cloud-a');
+ const restored=await phone.api('/api/notebook/maintenance',{version:phone.store.version,action:'restore',receiptId:first.body.receiptId,confirmed:true,confirmation:'删除'});assert.equal(restored.status,200);assert(restored.body.data.cards.some(c=>c.id==='parent'));assert(restored.body.data.libraryBooks[0].readingCompletion.finished);assert.equal(archives.archiveGroups(phone.store.data).length,0);assert.equal(phone.store.sync.target,'cloud-a');
 });
 
 test('mobile maintenance rejects stale or unconfirmed changes without writing',async()=>{const p=device(),n=p.writes.length;assert.equal((await p.api('/api/notebook/maintenance',{version:0,action:'remove'})).status,409);assert.equal((await p.api('/api/notebook/maintenance',{version:7,action:'remove'})).status,500);assert.equal(p.writes.length,n);});

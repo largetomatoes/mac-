@@ -50,9 +50,10 @@ final class WenjianUpdateClient {
  synchronized JSONObject start(String wanted,String manifestUrl)throws Exception{
   String phase=state.optString("state");if(phase.equals("downloading")||phase.equals("verifying")||phase.equals("ready")&&Objects.equals(version,wanted))return status();
   if(wanted==null||!wanted.matches("3[.][0-9]{1,50}")||manifestUrl==null||!manifestUrl.startsWith("https://github.com/largetomatoes/mac-/releases/download/v"+wanted+"/"))throw new IOException("更新来源无效");
+  java.util.regex.Matcher requested=java.util.regex.Pattern.compile("/update-manifest-(\\d+)\\.json$").matcher(manifestUrl);final long requestedBuild=requested.find()?Long.parseLong(requested.group(1)):0;
   version=wanted;cancelled.set(false);set("downloading",null);
   network.execute(()->{File partial=null;try{
-   signed=json(manifestUrl);asset=verify(signed);long expected=asset.getLong("size");File dir=cache();if(dir.getUsableSpace()<expected*3)throw new IOException("更新可用空间不足");apk=new File(dir,"Wenjian-"+version+".apk");partial=new File(apk+".partial");
+   signed=json(manifestUrl);if(requestedBuild>0&&verifiedPayload(signed).getLong("build")!=requestedBuild)throw new IOException("更新构建号与所选版本不一致");asset=verify(signed);long expected=asset.getLong("size");File dir=cache();if(dir.getUsableSpace()<expected*3)throw new IOException("更新可用空间不足");apk=new File(dir,"Wenjian-"+version+".apk");partial=new File(apk+".partial");
    HttpsURLConnection c=open(asset.getString("url"),0);long total=0;try(InputStream in=c.getInputStream();FileOutputStream out=new FileOutputStream(partial)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){if(cancelled.get())throw new IOException("下载已取消");total+=n;if(total>expected)throw new IOException("更新包超过清单大小");out.write(b,0,n);synchronized(this){state.put("completed",total).put("total",expected);}}out.getFD().sync();}finally{c.disconnect();}
    set("verifying",null);if(total!=expected||!hash(partial).equals(asset.getString("sha256")))throw new IOException("更新包校验失败");verifyApk(partial);if(apk.exists()&&!apk.delete())throw new IOException("旧更新缓存无法移除");if(!partial.renameTo(apk))throw new IOException("更新缓存无法保存");persistReady();set("ready",null);
   }catch(Exception e){if(partial!=null)partial.delete();set(cancelled.get()?"cancelled":"failed",e.getMessage());}});

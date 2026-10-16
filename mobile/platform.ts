@@ -1,3 +1,4 @@
+import {archiveRecords,restoreArchived,archiveGroups,purgeArchiveBatch,visibleNotebook} from '../lib/record-archives.cjs';
 import {validSettings,validateCoreTransition,validateReadingTransition} from '../lib/notebook-settings.cjs';
 import {removeRecords,maintenanceReceipt,restoreMaintenance,type MaintenanceReceipt} from '../lib/maintenance.cjs';
 import {App} from '@capacitor/app';
@@ -45,7 +46,7 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
   if(route==='/api/app/update'){
    if(!isNative)return json({state:'idle'});
    if(!payload.action)return json(await native.appUpdate({action:'status'}));
-   if(payload.action==='download'){const releases=(await native.appReleases()).releases as {tag_name:string;assets:{name:string;browser_download_url:string;state:string}[]}[];const release=releases.find(r=>r.tag_name==='v'+payload.version);const asset=release?.assets.find(a=>a.name==='update-manifest.json'&&a.state==='uploaded');if(!asset)throw Error('此版本尚未提供应用内更新清单');return json(await native.appUpdate({action:'download',version:payload.version,manifestUrl:asset.browser_download_url}));}
+   if(payload.action==='download'){const releases=(await native.appReleases()).releases as {tag_name:string;assets:{name:string;browser_download_url:string;state:string}[]}[];const release=releases.find(r=>r.tag_name==='v'+payload.version);const asset=release?.assets.find(a=>a.name===(payload.build?'update-manifest-'+payload.build+'.json':'update-manifest.json')&&a.state==='uploaded');if(!asset)throw Error('此版本尚未提供应用内更新清单');return json(await native.appUpdate({action:'download',version:payload.version,manifestUrl:asset.browser_download_url}));}
    return json(await native.appUpdate({action:payload.action}));
   }
   if(route==='/api/app/open'){if(!validReleaseUrl(payload.url))throw Error('发布链接无效');if(isNative)return json(await native.openRelease({url:payload.url}));window.open(payload.url,'_blank','noopener,noreferrer');return json({ok:true});}
@@ -71,19 +72,15 @@ export function installMobileApi(){window.fetch=async(input,init)=>{
    if(route==='/api/sync/commit'){if(payload.version!==current.version||(payload.syncRevision||0)!==(current.syncRevision||0))return json({error:'本机刚保存新内容'},409);if(!validSettings(payload.data)||payload.sync?.schema!==1)throw Error('同步资料不完整');if(JSON.stringify(current.data)===JSON.stringify(normalize(payload.data))&&JSON.stringify(current.sync)===JSON.stringify(payload.sync))return json(current);return json(await writeStore({...current,version:current.version+(JSON.stringify(current.data)===JSON.stringify(payload.data)?0:1),syncRevision:(current.syncRevision||0)+1,data:normalize(payload.data),sync:payload.sync}));}
    if(route==='/api/notebook/maintenance'){
     const trash=current.localTrash||[];
-    if(method==='GET')return json({entries:trash.map(({id,at,label,count})=>({id,at,label,count})).reverse()});
+    if(method==='GET')return json({entries:[...archiveGroups(current.data),...trash.map(({id,at,label,count})=>({id,at,label,count})).reverse()]});
     if(payload.version!==current.version)return json({error:'资料刚有修改'},409);
     if(payload.confirmation!==(payload.action==='purge'?'永久清除':'删除')||payload.confirmed!==true)throw Error('请先核对操作范围');
     let data=current.data,localTrash=trash,receiptId:string|undefined;
     if(payload.action==='restore'||payload.action==='purge'){
-     const receipt=trash.find(r=>r.id===payload.receiptId);if(!receipt)throw Error('恢复副本已变化，请重新打开最近删除');
-     if(payload.action==='restore')data=restoreMaintenance(data,receipt);
-     localTrash=trash.filter(r=>r.id!==receipt.id);
+     const archived=archiveGroups(data).some(r=>r.id===payload.receiptId);if(archived)data=payload.action==='restore'?restoreArchived(data,payload.receiptId):purgeArchiveBatch(data,payload.receiptId,removeRecords);else{const receipt=trash.find(r=>r.id===payload.receiptId);if(!receipt)throw Error('恢复副本已变化，请重新打开最近删除');if(payload.action==='restore')data=restoreMaintenance(data,receipt);localTrash=trash.filter(r=>r.id!==receipt.id);}
     }else{
      const targets=payload.targets||(payload.target?[payload.target]:[]);
-     data=removeRecords(data,targets,{preserveThoughts:payload.preserveThoughts!==false});receiptId=crypto.randomUUID();
-     localTrash=[...trash,maintenanceReceipt(current.data,data,{id:receiptId,at:new Date().toISOString(),label:'所选笔记与标注',count:targets.length})];
-     if(new TextEncoder().encode(JSON.stringify(localTrash)).length>48*1024*1024)throw Error('最近删除空间已满，未移除任何内容。请先整理恢复副本。');
+     receiptId=crypto.randomUUID();data=archiveRecords(data,targets,{batchId:receiptId});
     }
     return json({...await writeStore({...current,version:current.version+1,data,localTrash}),receiptId});
    }

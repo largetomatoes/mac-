@@ -30,3 +30,5 @@
 
 /* Reading status must not change the space available to render the page. */
 .reader-ocr-button{width:34px!important;min-width:34px!important;height:34px!important;padding:0!important;flex:none}.pdf-stage{scrollbar-gutter:stable;overflow-anchor:none}.pdf-page{overflow-anchor:none}
+
+.process-pdf-overlay{position:absolute;inset:0;z-index:2;pointer-events:none}.process-pdf-overlay i{position:absolute;display:block;background:rgba(246,214,105,.23);pointer-events:none;border-radius:1px}

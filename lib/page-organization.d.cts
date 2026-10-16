@@ -1,0 +1,16 @@
+import type {Notebook,QuestionPage,PagePlacement} from './notebook';
+export const FORMAT:number;
+export function pages(data:Notebook):QuestionPage[];
+export function placements(data:Notebook,page:QuestionPage):PagePlacement[];
+export function migrateOrganization(data:Notebook):Notebook;
+export function validateOrganization(data:Notebook):string;
+export function pageRecordIds(data:Notebook,pageId:string):Set<string>;
+export function recordPages(data:Notebook,recordId:string):QuestionPage[];
+export function organizationView(data:Notebook,pageId:string):Notebook;
+export function saveArrangement(data:Notebook,pageId:string,rows:PagePlacement[],label:string,at?:string):Notebook;
+export function branchIds(rows:PagePlacement[],rootId:string):Set<string>;
+export function includeBranch(data:Notebook,targetPageId:string,sourcePageId:string,recordId:string,parentId:string,withChildren?:boolean,at?:string):Notebook;
+export function movePlacement(data:Notebook,pageId:string,recordId:string,parentId:string,beforeId?:string,at?:string):Notebook;
+export function removePlacement(data:Notebook,pageId:string,recordId:string,at?:string):Notebook;
+export function registerPageAdditions(previous:Notebook,next:Notebook,pageId:string):Notebook;
+export function undoArrangement(data:Notebook,pageId:string,entryId:string,at?:string):Notebook;

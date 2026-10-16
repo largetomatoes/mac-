@@ -1,3 +1,5 @@
+import {load as fixtureLoad} from './load-ts.cjs';
+import {resolve as resolveTestPath,dirname as testDirname,extname as testExt} from 'node:path';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -7,7 +9,7 @@ import cache from '../lib/ocr-cache.cjs';
 import settings from '../lib/notebook-settings.cjs';
 const copy=v=>JSON.parse(JSON.stringify(v));
 const same=(a,b)=>assert.deepEqual(copy(a),copy(b));
-function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(!(name in imports))throw Error(name);return imports[name];},Response,URL,setTimeout,clearTimeout,console:{error(){}}});return module.exports;}
+function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(name in imports)return imports[name];const target=name.startsWith('@/')?resolveTestPath(name.slice(2)):resolveTestPath(testDirname(file),name);return fixtureLoad(testExt(target)?target:target+'.ts');},crypto:globalThis.crypto,structuredClone,URL,Response,Request,setTimeout,clearTimeout,console});return module.exports;}
 const model=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts')});
 const deletion=load('lib/deletion.ts',{'./notebook':model});
 const initial=model.changeCoreQuestion(copy(model.initialNotebook),'测试问题');

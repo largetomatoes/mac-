@@ -80,7 +80,7 @@ async function exportCompleteBackup({ notebookPath, libraryDir, draftsPath, dest
     }
   }
   const manifest = {
-    format: 'wenjian-complete-backup', version: 1, createdAt: new Date().toISOString(),
+    format: 'wenjian-complete-backup', version: notebook.data.organizationVersion===2 ? 2 : 1, createdAt: new Date().toISOString(),
     notebook: { size: notebookBytes.length, sha256: crypto.createHash('sha256').update(notebookBytes).digest('hex') },
     books,
     ...(draftsBytes ? { drafts: { size: draftsBytes.length, sha256: crypto.createHash('sha256').update(draftsBytes).digest('hex') } } : {})
@@ -124,7 +124,7 @@ async function readExactly(handle, length, position) {
 }
 
 function validateManifest(manifest) {
-  if (!manifest || manifest.format !== 'wenjian-complete-backup' || manifest.version !== 1 ||
+  if (!manifest || manifest.format !== 'wenjian-complete-backup' || ![1,2].includes(manifest.version) ||
       !manifest.notebook || !Number.isSafeInteger(manifest.notebook.size) || manifest.notebook.size < 1 || manifest.notebook.size > MAX_NOTEBOOK_SIZE ||
       !HASH_PATTERN.test(manifest.notebook.sha256) || !Array.isArray(manifest.books) || manifest.books.length > 100000) {
     throw new Error('不是有效的问间完整备份。');

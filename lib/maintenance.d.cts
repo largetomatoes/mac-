@@ -3,7 +3,7 @@ export function removeRecord(data:import('./notebook').Notebook,target:Maintenan
 export function removeRecords(data:import('./notebook').Notebook,targets:MaintenanceTarget[],options?:{preserveThoughts?:boolean}):import('./notebook').Notebook;
 export function maintenanceImpact(data:import('./notebook').Notebook,targets:MaintenanceTarget[]):{records:number;thoughts:number;replies:number;links:number;hidden:number};
 export type MaintenanceRequest={action?:'remove'|'restore'|'purge';targets?:MaintenanceTarget[];preserveThoughts?:boolean;receiptId?:string};
-export type TrashEntry={id:string;at:string;label:string;count:number};
+export type TrashEntry={purgeable?:boolean;records?:Array<{title:string;text:string;quote:string}>;id:string;at:string;label:string;count:number};
 export type MaintenanceReceipt=TrashEntry&{changes:{collection:string;id:string;before?:unknown;after?:unknown}[]};
 export function maintenanceReceipt(before:import('./notebook').Notebook,after:import('./notebook').Notebook,meta:TrashEntry):MaintenanceReceipt;
 export function restoreMaintenance(data:import('./notebook').Notebook,receipt:MaintenanceReceipt):import('./notebook').Notebook;

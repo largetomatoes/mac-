@@ -2,14 +2,14 @@ import {materialize,newSyncState,project,stable,tips,unionOperations,resolveConf
 import {initialNotebook,type Notebook} from '../notebook';
 import {syncApi,sha256,operationBatches,type Envelope,type SyncMode} from './client';
 export type SavedVersion={id:string;epoch:string;snapshots:string[];at:string;deviceName:string};
-export type Manifest={schema:1|2|3;libraryId:string;epoch:string;snapshots:string[];createdAt:string;retired?:string[];baseline?:{device:string;deviceName:string;at:string};history?:SavedVersion[]};
+export type Manifest={schema:1|2|3|4;libraryId:string;epoch:string;snapshots:string[];createdAt:string;retired?:string[];baseline?:{device:string;deviceName:string;at:string};history?:SavedVersion[]};
 export type CleanupStatus={remaining:number;deleted:number;paused:boolean;reason?:string};
 export type CleanupResult=Envelope&{cleanup:CleanupStatus};
 type RenewLease=(force?:boolean)=>Promise<void>;
 export type CloudPreview={manifest:Manifest|null;operations:Operation[];data:Notebook;conflicts:ReturnType<typeof materialize>['conflicts'];keys:string[]};
 const remote=<T,>(target:string,body:unknown)=>syncApi<T>('remote',{target,...body as object});
 function assertLibraryBinding(state:ReturnType<typeof newSyncState>,target:string,manifest:Manifest|null){if(state.target&&state.target!==target)throw Error('连接的资料库已改变，请在连接设置中处理。');if(state.libraryId&&manifest&&state.libraryId!==manifest.libraryId)throw Error('本机与云端不是同一资料库，请核对后接入。');}
-export async function readManifest(target:string):Promise<{manifest:Manifest|null;etag:string|null}>{const r=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'library.json'});if(!r.text)return {manifest:null,etag:r.etag};const m=JSON.parse(r.text) as Manifest;const snapshotKeys=(keys:unknown):keys is string[]=>Array.isArray(keys)&&keys.every(k=>typeof k==='string'&&/^snapshots\/[a-f0-9]{64}\.json$/.test(k));if(![1,2,3].includes(m.schema)||!/^[-a-zA-Z0-9_]{8,100}$/.test(m.libraryId)||!(m.epoch==='legacy'||/^[-a-zA-Z0-9_]{8,100}$/.test(m.epoch))||!snapshotKeys(m.snapshots)||(m.retired!==undefined&&(!Array.isArray(m.retired)||m.retired.some(k=>!/^(?:changes|epochs\/[-a-zA-Z0-9_]{8,100}\/changes|snapshots)\/[a-f0-9]{64}\.json$/.test(k))))||(m.history!==undefined&&(!Array.isArray(m.history)||m.history.some(v=>!v||!/^[-a-zA-Z0-9_]{8,100}$/.test(v.id)||!snapshotKeys(v.snapshots)||typeof v.deviceName!=='string'||!Number.isFinite(Date.parse(v.at))))))throw Error('云端资料库标识无效，未修改本机内容。');return {manifest:m,etag:r.etag};}
+export async function readManifest(target:string):Promise<{manifest:Manifest|null;etag:string|null}>{const r=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'library.json'});if(!r.text)return {manifest:null,etag:r.etag};const m=JSON.parse(r.text) as Manifest;const snapshotKeys=(keys:unknown):keys is string[]=>Array.isArray(keys)&&keys.every(k=>typeof k==='string'&&/^snapshots\/[a-f0-9]{64}\.json$/.test(k));if(![1,2,3,4].includes(m.schema)||!/^[-a-zA-Z0-9_]{8,100}$/.test(m.libraryId)||!(m.epoch==='legacy'||/^[-a-zA-Z0-9_]{8,100}$/.test(m.epoch))||!snapshotKeys(m.snapshots)||(m.retired!==undefined&&(!Array.isArray(m.retired)||m.retired.some(k=>!/^(?:changes|epochs\/[-a-zA-Z0-9_]{8,100}\/changes|snapshots)\/[a-f0-9]{64}\.json$/.test(k))))||(m.history!==undefined&&(!Array.isArray(m.history)||m.history.some(v=>!v||!/^[-a-zA-Z0-9_]{8,100}$/.test(v.id)||!snapshotKeys(v.snapshots)||typeof v.deviceName!=='string'||!Number.isFinite(Date.parse(v.at))))))throw Error('云端资料库标识无效，未修改本机内容。');return {manifest:m,etag:r.etag};}
 export async function cloudPreview(target:string):Promise<CloudPreview>{const {manifest}=await readManifest(target),listing=await remote<{keys:string[]}>(target,{action:'list',epoch:manifest?.epoch||'legacy'});const operations:Operation[]=[];for(const key of [...(manifest?.snapshots||[]),...listing.keys]){const r=await remote<{text:string}>(target,{action:'get',key});if(await sha256(r.text)!==key.split('/').at(-1)?.slice(0,-5))throw Error('云端资料校验失败。');const batch=JSON.parse(r.text);if(batch.schema!==1||!Array.isArray(batch.operations))throw Error('云端同步格式暂不支持。');operations.push(...batch.operations);}const all=unionOperations(operations),local=structuredClone(initialNotebook);const merged=materialize({...newSyncState(),operations:all},local);return {manifest,operations:all,data:merged.data,conflicts:merged.conflicts,keys:listing.keys};}
 // Every new desktop client shares this lease. Conditional writes prevent two writers from owning it.
 export async function withCloudLease<T>(target:string,job:(renew:RenewLease)=>Promise<T>):Promise<T>{
@@ -33,7 +33,7 @@ async function publishBaseline(target:string,snapshot:Envelope,data:Notebook,ren
  if(previous.operations.length){const snapshots=await saveSnapshots(target,previous.operations,renew);history.push({id:crypto.randomUUID(),epoch:info.manifest?.epoch||'legacy',snapshots,at:info.manifest?.baseline?.at||at,deviceName:info.manifest?.baseline?.deviceName||'切换前的云端资料'});}
  const snapshots=await saveSnapshots(target,operations,renew),epoch=crypto.randomUUID();
  // Schema 2 makes older writers stop before they can restore a discarded baseline.
- const manifest:Manifest={schema:3,libraryId:info.manifest?.libraryId||state.libraryId||crypto.randomUUID(),epoch,snapshots,createdAt:at,baseline:{device:state.device,deviceName,at},history,retired:[...new Set([...(info.manifest?.retired||[]),...previous.keys,...(info.manifest?.snapshots||[])])]};
+ const manifest:Manifest={schema:4,libraryId:info.manifest?.libraryId||state.libraryId||crypto.randomUUID(),epoch,snapshots,createdAt:at,baseline:{device:state.device,deviceName,at},history,retired:[...new Set([...(info.manifest?.retired||[]),...previous.keys,...(info.manifest?.snapshots||[])])]};
  await remote(target,{action:'guard'});await renew?.(true);await remote(target,{action:'control-put',key:'library.json',etag:info.etag,text:stable(manifest)});
  const next={...state,target,libraryId:manifest.libraryId,epoch,operations,pending:[],received:[],published:[],observed:project(data)};
  const result=await syncApi<Envelope>('commit',{version:latest.version,syncRevision:latest.syncRevision||0,data:{...data,zoteroEnabled:latest.data.zoteroEnabled},sync:next});window.dispatchEvent(new CustomEvent('wenjian-sync-updated',{detail:result}));return {manifest,snapshot:result};
@@ -61,10 +61,10 @@ export async function prepareDesktopSync(target:string,mode?:SyncMode,renew?:Ren
    const merged=materialize(next,snapshot.data);next.observed=project(merged.data);await renew?.(true);snapshot=await syncApi<Envelope>('commit',{version:snapshot.version,syncRevision:snapshot.syncRevision||0,data:merged.data,sync:next});window.dispatchEvent(new CustomEvent('wenjian-sync-updated',{detail:snapshot}));
   }
  }
- if(manifest!.schema!==3){
+ if(manifest!.schema!==4){
   const latest=await readManifest(target);if(!latest.etag)throw Error('云端未返回并发校验标识，未升级资料格式。');
   if(latest.manifest?.epoch!==manifest!.epoch)throw Error('云端资料刚有变化，请重新同步。');
-  await renew?.(true);manifest={...manifest!,schema:3};
+  await renew?.(true);manifest={...manifest!,schema:4};
   await remote(target,{action:'control-put',key:'library.json',etag:latest.etag,text:stable(manifest)});
  }
  await renew?.();return {manifest:manifest!,snapshot};

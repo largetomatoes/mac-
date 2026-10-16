@@ -1,0 +1,14 @@
+.author-letter[data-slot=dialog-content]{display:flex;flex-direction:column;gap:0;width:min(780px,calc(100vw - 56px));max-width:780px;height:min(850px,calc(100dvh - 64px));padding:0;overflow:hidden;background:#fbfaf6;color:#414d45;border:1px solid #e0e3d9;border-radius:16px;box-shadow:0 28px 100px #20352c30}
+.author-letter>header{padding:28px 48px 20px;flex-shrink:0;border-bottom:1px solid #e7e6dc;background:linear-gradient(120deg,#f4f4eb,#fbfaf6)}
+.author-letter-eyebrow{color:#8a8f79;font-size:11px;letter-spacing:.18em}
+.author-letter [data-slot=dialog-title]{margin:12px 0 8px;font:500 29px/1.4 "Songti SC","STSong",serif;color:#3a5648;letter-spacing:.06em}
+.author-letter [data-slot=dialog-description]{font-size:13px;color:#7b8777}
+.author-letter-body{flex:1;min-height:0;overflow-y:scroll;overscroll-behavior:contain;scrollbar-gutter:stable;outline-offset:-3px;padding:22px 42px 28px 48px;font:16px/2.05 "Songti SC","STSong",serif;overflow-wrap:anywhere}
+.author-letter-body p{margin:0 0 20px}.author-letter-body p:last-child{margin-bottom:6px}.author-letter-greeting{color:#385b47}.author-letter-body strong{font-weight:600;color:#365342}
+.author-letter-body blockquote{margin:22px 0 24px;padding:18px 22px;border-left:3px solid #a5af8a;border-radius:0 9px 9px 0;background:#f0f1e7;color:#626f52;font-size:17px;line-height:2}
+.author-letter-body a{color:#54775d;text-decoration:underline;text-underline-offset:4px}.author-letter-body a:hover{color:#2d543b}
+.author-letter>footer{display:flex;align-items:center;gap:16px;justify-content:space-between;flex-shrink:0;padding:16px 32px;border-top:1px solid #e7e6dc;background:#f7f7f0}.author-letter>footer>span{font-size:12px;line-height:1.7;color:#7c8675}.author-letter>footer button{flex-shrink:0;min-width:100px;background:#415f4e;color:#fff;border-radius:8px}
+.author-letter-body::-webkit-scrollbar{width:14px}.author-letter-body::-webkit-scrollbar-track{background:#eef0e7}.author-letter-body::-webkit-scrollbar-thumb{background:#a6b19c;border:3px solid #eef0e7;border-radius:8px;min-height:44px}
+@media(max-width:650px){.author-letter[data-slot=dialog-content]{width:calc(100vw - 24px);height:calc(100dvh - 32px)}.author-letter>header{padding:24px}.author-letter-body{padding:20px 20px 24px 24px;font-size:15px}.author-letter [data-slot=dialog-title]{font-size:25px}.author-letter>footer{padding:14px 20px}.author-letter-body blockquote{padding:14px 16px}}
+
+.author-letter-body>p{text-indent:2em;text-align:justify}.author-letter-body>.author-letter-greeting{text-indent:0;margin-bottom:26px}.author-letter-signature{margin:34px 4px 10px;text-align:right;font-size:15px;color:#5e735a;line-height:1.9}.author-letter-signature p{margin:0;text-indent:0}.author-letter-signature time{font-size:14px;color:#839078}.author-letter-body blockquote{text-align:justify}

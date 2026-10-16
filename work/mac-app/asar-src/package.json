@@ -7,5 +7,6 @@
   "dependencies": {
     "pdf-lib": "1.17.1"
   },
-  "buildVersion": "315"
+  "buildVersion": "319",
+  "organizationTrial": false
 }

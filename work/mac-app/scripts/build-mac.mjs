@@ -35,7 +35,7 @@ function buildSpa() {
 
 async function prepare() {
   buildSpa();
-  for (const name of ['index.html', 'reader/pdf/pdf.worker.min.mjs', 'reader/ocr/worker.min.js', 'reader/ocr/chi_sim.traineddata.gz', 'reader/ocr/eng.traineddata.gz']) {
+  for (const name of ['index.html', 'reader/pdf/pdf.worker.min.mjs', 'reader/pdf/cmaps/UniGB-UCS2-H.bcmap', 'reader/pdf/standard_fonts/FoxitSerif.pfb', 'reader/ocr/worker.min.js', 'reader/ocr/chi_sim.traineddata.gz', 'reader/ocr/eng.traineddata.gz']) {
     await requireFile(path.join(spaDist, name));
   }
   for (const name of ['seed.json', 'AppIcon.icns', 'native-Info.plist']) await requireFile(path.join(appRoot, name));
@@ -48,6 +48,8 @@ async function prepare() {
   await mkdir(stage, { recursive: true });
   await mkdir(resourceStage, { recursive: true });
   await cp(path.join(appRoot, 'asar-src'), stage, { recursive: true });
+  await cp(path.join(projectRoot,'lib/record-archives.cjs'),path.join(stage,'record-archives.cjs'));
+  await cp(path.join(projectRoot,'lib/page-organization.cjs'),path.join(stage,'page-organization.cjs'));
   await cp(path.join(projectRoot,'lib/maintenance.cjs'),path.join(stage,'maintenance.cjs'));
   await cp(path.join(projectRoot, 'lib/notebook-settings.cjs'), path.join(stage, 'notebook-settings.cjs'));
   await cp(path.join(projectRoot, 'lib/ocr-cache.cjs'), path.join(stage, 'ocr-cache.cjs')); 

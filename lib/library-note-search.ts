@@ -1,7 +1,8 @@
+import {processEntries,processSources} from './process-note-sources';
 import {displayBook,visibleZoteroAnnotations,type Notebook,type LibraryBook,type ZoteroAnnotation} from './notebook';
 import {noteBook,thoughtEntries,type BookNote} from './book-notebook';
 
-export type LibraryNoteHit={key:string;kind:'process'|'reading'|'zotero';id:string;bookId:string;bookTitle:string;chapter:string;chapterKey:string;locator:string;content:string;preview:string};
+export type LibraryNoteHit={key:string;kind:'process'|'reading'|'zotero';id:string;bookId:string;bookTitle:string;chapter:string;chapterKey:string;locator:string;sourceLocation?:string;content:string;preview:string};
 const tidy=(text:string|undefined)=>(text||'').trim().replace(/\s+/g,' ');
 const normalize=(text:string)=>text.normalize('NFKC').toLocaleLowerCase();
 export function matchesNoteText(content:string,query:string){return normalize(tidy(query)).split(/\s+/).filter(Boolean).every(word=>normalize(content).includes(word));}
@@ -12,7 +13,7 @@ export function zoteroAnnotationChapter(book:LibraryBook,annotation:ZoteroAnnota
 }
 export function bookNoteContent(entry:BookNote,replies:Map<string,string>=new Map()){
  const note=entry.note,source=entry.kind==='reading'?entry.source:undefined;
- return [entry.kind==='process'?entry.note.interpretation:entry.note.text,entry.kind==='process'?note.quote:source?.quote||note.quote,source?.noteText,entry.kind==='process'?note.chapter:source?.chapter||note.chapter,entry.kind==='process'?note.locator:source?.locator||note.locator,...(note.thoughts||[]).flatMap(t=>[t.text,t.reason,replies.get(t.id)])].filter(Boolean).join('\n');
+ return [entry.kind==='process'?entry.note.interpretation:entry.note.text,entry.kind==='process'?processSources(entry.note).filter(s=>s.libraryBookId===entry.note.libraryBookId&&(s.chapter||'')===entry.note.chapter).map(s=>s.quote).join('\n'):source?.quote||note.quote,source?.noteText,entry.kind==='process'?note.chapter:source?.chapter||note.chapter,entry.kind==='process'?note.locator:source?.locator||note.locator,...(note.thoughts||[]).flatMap(t=>[t.text,t.reason,replies.get(t.id)])].filter(Boolean).join('\n');
 }
 export function libraryNoteIndex(data:Notebook):LibraryNoteHit[]{
  const hits:LibraryNoteHit[]=[],replies=new Map<string,string>();
@@ -22,9 +23,9 @@ export function libraryNoteIndex(data:Notebook):LibraryNoteHit[]{
   const shown=displayBook(book),source=entry.kind==='reading'?entry.source:undefined,chapter=tidy(source?.chapter||entry.note.chapter),whole=entry.kind==='reading'&&!chapter&&entry.note.scope==='book';
   const chapterKey=chapter?'chapter:'+chapter:whole?'whole':'unfiled';
   const content=bookNoteContent(entry,replies),preview=entry.kind==='process'?entry.note.interpretation||entry.note.quote:entry.note.text;
-  hits.push({key:JSON.stringify([book.id,entry.kind,entry.note.id,chapterKey]),kind:entry.kind,id:entry.note.id,bookId:book.id,bookTitle:shown.title,chapter:chapter|| (whole?'全书思考':'未标章节'),chapterKey,locator:source?.locator||entry.note.locator,content,preview:tidy(preview)});
+  hits.push({key:JSON.stringify([book.id,entry.kind,entry.note.id,chapterKey]),kind:entry.kind,id:entry.note.id,bookId:book.id,bookTitle:shown.title,chapter:chapter|| (whole?'全书思考':'未标章节'),chapterKey,locator:source?.locator||entry.note.locator,sourceLocation:source?.sourceLocation||entry.note.sourceLocation,content,preview:tidy(preview)});
  };
- for(const note of data.readingNotes)add({kind:'process',note});
+ for(const note of data.readingNotes.flatMap(processEntries))add({kind:'process',note});
  for(const note of data.bookThoughts)for(const entry of thoughtEntries(note))add(entry);
  for(const book of data.libraryBooks)for(const annotation of visibleZoteroAnnotations(book)){
   const chapter=zoteroAnnotationChapter(book,annotation);

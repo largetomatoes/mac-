@@ -1,10 +1,12 @@
+import {load as fixtureLoad} from './load-ts.cjs';
+import {resolve as resolveTestPath,dirname as testDirname,extname as testExt} from 'node:path';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import assert from 'node:assert/strict';
-function load(file){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,URL});return module.exports;}
+function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(name in imports)return imports[name];const target=name.startsWith('@/')?resolveTestPath(name.slice(2)):resolveTestPath(testDirname(file),name);return fixtureLoad(testExt(target)?target:target+'.ts');},crypto:globalThis.crypto,structuredClone,URL,Response,Request,setTimeout,clearTimeout,console});return module.exports;}
 const {chapterNotes,notebookBooks,noteBook}=load('lib/book-notebook.ts');
 const book={id:'a',title:'同名书',author:'甲',pdfChapters:[{title:'第十章',startPage:10},{title:'第二章',startPage:2}]};
 const process={id:'p',book:'同名书',author:'甲',libraryBookId:'a',chapter:'第二章',quote:'原话',interpretation:'理解',at:'2026-01-01',thoughts:[]};

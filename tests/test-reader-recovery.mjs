@@ -43,14 +43,14 @@ let rangeCopy='';vm.runInNewContext(`(${copyHandlers[1]})`,{window:{getSelection
 let excerpt,selectionFunction;
 function findSelection(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='selectPdfText')selectionFunction=node.getText(reader);ts.forEachChild(node,findSelection);}findSelection(reader);
 const selectionCode=ts.transpileModule(selectionFunction,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-vm.runInNewContext(selectionCode+';selectPdfText();',{window:{getSelection:()=>selection},cleanReadingText,reflowReadingExcerpt,ocrTextLayerRef:{current:{contains:()=>true}},pdfTextLayerRef:{current:null},pdfPageRef:{current:null},page:1,selectionMenu:()=>undefined,acceptExcerpt:value=>excerpt=value});assert.equal(excerpt.quote,'Reading connects ideas. Another line');assert.equal(excerpt.rawQuote,original);assert.equal(excerpt.sourceLocation,'pdf:1');
+vm.runInNewContext(selectionCode+';selectPdfText();',{window:{getSelection:()=>selection},cleanReadingText,reflowReadingExcerpt,selectionSharedRef:{current:false},sharedSelectionPressed:()=>false,shortcutRef:{current:'Alt'},ocrTextLayerRef:{current:{contains:()=>true}},pdfTextLayerRef:{current:null},pdfPageRef:{current:null},page:1,selectionMenu:()=>undefined,acceptExcerpt:value=>excerpt=value});assert.equal(excerpt.quote,'Reading connects ideas. Another line');assert.equal(excerpt.rawQuote,original);assert.equal(excerpt.sourceLocation,'pdf:1');
 console.log('PASS: real copy/note handlers reflow visual breaks while preserving Range spaces, raw quotation and source locator.');
 function readerFunction(name){let found;function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.text===name)found=node.getText(reader);ts.forEachChild(node,visit);}visit(reader);assert.ok(found,`reader function ${name} exists`);return ts.transpileModule(found,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}
 // Reflow can remove a discretionary hyphen; source matching must still use the
 // original OCR text, otherwise a successfully saved highlight disappears.
 const originalHyphen='soft\u00ad\nware',textNode={data:originalHyphen},highlightRanges=[];
 vm.runInNewContext(readerFunction('applyPdfHighlights')+';applyPdfHighlights();',{
- requestAnimationFrame:callback=>callback(),window:{Highlight:class{constructor(...ranges){highlightRanges.push(...ranges);}}},CSS:{highlights:{delete(){},set(){}}},
+ paneKey:'test-pane',requestAnimationFrame:callback=>callback(),window:{Highlight:class{constructor(...ranges){highlightRanges.push(...ranges);}}},CSS:{highlights:{delete(){},set(){}}},
  document:{getElementById:()=>true,createTreeWalker:()=>{let read=false;return {nextNode:()=>read?null:(read=true,textNode)};},createRange:()=>({setStart(node,offset){this.start=offset;},setEnd(node,offset){this.end=offset;}})},NodeFilter:{SHOW_TEXT:4},
  dataRef:{current:{libraryHighlights:[{libraryBookId:'b',sourceLocation:'pdf:1',quote:'software',rawQuote:originalHyphen}]}},activeId:'b',page:1,pdfTextLayerRef:{current:null},ocrTextLayerRef:{current:{}},...load('lib/reader-text.ts'),
 });
@@ -58,7 +58,7 @@ assert.equal(highlightRanges.length,1);assert.equal(highlightRanges[0].start,0);
 let savedNote;
 const sourceExcerpt={quote:'software',rawQuote:originalHyphen,locator:'第 4 页',sourceLocation:'pdf:4',chapter:'',anchorY:.42};
 await vm.runInNewContext(readerFunction('saveReadingNote')+';saveReadingNote({preventDefault(){}});',{
- active:{id:'b',title:'测试书',format:'pdf'},excerpt:sourceExcerpt,interpretation:'我的理解',questionIds:[],chapter:'测试章节',page:4,
+ currentSource:()=>({id:'source',libraryBookId:'b',bookTitle:'测试书',...sourceExcerpt}),active:{id:'b',title:'测试书',format:'pdf'},excerpt:sourceExcerpt,interpretation:'我的理解',questionIds:[],chapter:'测试章节',page:4,
  data:{libraryBooks:[{id:'b'}],readingNotes:[]},crypto:{randomUUID:()=> 'new-note'},clean:value=>value.trim(),
  save:async data=>{savedNote=data.readingNotes[0];return false;},
 });

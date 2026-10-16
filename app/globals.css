@@ -881,3 +881,7 @@ input.material-picker-search { width: calc(100% - 48px); height: 36px; backgroun
   overflow: visible;
 }
 .cardbox:focus-visible { outline: 2px solid #96a7af; outline-offset: -2px; }
+
+.usage-guide{display:flex!important;flex-direction:column;width:min(720px,92vw)!important;max-width:720px!important;max-height:85dvh;overflow:hidden}.usage-guide-body{min-height:0;overflow:auto;scrollbar-gutter:stable;padding:4px 12px 12px 0}.usage-guide details{border-bottom:1px solid #dfdfd7;padding:13px 2px}.usage-guide summary{font-size:14px;color:#4c645e;cursor:pointer}.usage-guide p{font-size:14px;line-height:1.9;color:#5e6c65;white-space:pre-wrap;margin:12px 0 2px}.note-revision-history{font-size:12px;margin:10px 0;max-height:240px;overflow:auto;flex-basis:100%;color:#6d7973}.note-revision-history article{border-top:1px solid #e1e5dd;padding:10px 0}.adopted-card-source{margin:12px 0;padding:12px;border:1px solid #e1e5dd;border-radius:8px;font-size:13px;line-height:1.8}
+
+.empty-question-pages{display:grid;place-content:center;flex:1;text-align:center;gap:16px;color:#6c7d73}.empty-question-pages h2{font:24px/1.5 "Songti SC",serif}

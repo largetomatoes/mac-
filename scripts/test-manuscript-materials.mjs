@@ -1,8 +1,6 @@
-import fs from 'node:fs';
-import vm from 'node:vm';
+import domainLoader from '../tests/load-ts.cjs';
 import assert from 'node:assert/strict';
-import ts from 'typescript';
-function load(file,imports){const module={exports:{}};const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(code,{module,exports:module.exports,require:name=>imports[name],console,crypto:{randomUUID:()=>String(Math.random())}});return module.exports;}
+const load=file=>domainLoader.load(file);
 const notebook=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts',{})}),materials=load('lib/manuscript-materials.ts',{'./notebook':notebook,'./book-notebook':load('lib/book-notebook.ts',{})});
 const document=load('lib/manuscript-document.ts',{'./notebook':notebook,'./manuscript-materials':materials});
 const deletion=load('lib/deletion.ts',{'./notebook':notebook});
@@ -22,7 +20,7 @@ const picks=materials.collectMaterials(catalog,['question:language','question:ch
 assert.equal(new Set(picks.map(item=>item.key)).size,picks.length,'dedup across scopes');
 assert.equal(picks.find(item=>item.key==='note:language:body').text,data.notes[1].body,'preserve exact whitespace');
 assert.ok(picks.some(item=>item.kind==='reply'&&item.text==='对这条思考的回答。'));
-assert.ok(picks.some(item=>item.kind==='quote'&&item.citation==='《一本书》 · 作者 · 第一章 · 第 12 页'));
+assert.ok(picks.some(item=>item.kind==='quote'&&item.citation==='《一本书》 · 第一章 · 第 12 页'));
 assert.ok(picks.some(item=>item.kind==='understanding'&&item.text==='我自己的理解。'));
 assert.ok(!picks.some(item=>item.targetId==='unrelated'||item.targetId==='cross'),'no inferred cross expansion');
 const cp=materials.collectMaterials(catalog,['cross:cross']);assert.ok(cp.some(item=>item.targetId==='cross-child'));assert.ok(!cp.some(item=>item.targetId==='language'));

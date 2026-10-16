@@ -3,8 +3,8 @@ export type SyncValue = unknown;
 export type Operation = {id:string;key:string;parents:string[];value:SyncValue;at:string;device:string;deviceName?:string};
 export type SyncState = {schema:1;device:string;deviceName?:string;libraryId?:string;epoch?:string;enabled:boolean;target:string;operations:Operation[];pending:Operation[];received:string[];observed:Record<string,SyncValue>;lastSync?:string;published?:string[];books?:{errors:Record<string,string>;lastChecked?:string}};
 export type Conflict = {key:string;options:Operation[]};
-const collections=['questionPages','notes','links','cards','readingNotes','crossThoughts','thoughtReplies','manuscripts','libraryBooks','libraryFolders','zoteroCollections','libraryHighlights','bookThoughts','ocrCache'] as const;
-const scalars=['setupCompleted','dismissedSuggestions'] as const;
+const collections=['recordArchives','questionPages','notes','links','cards','readingNotes','crossThoughts','thoughtReplies','manuscripts','libraryBooks','libraryFolders','zoteroCollections','libraryHighlights','bookThoughts','ocrCache'] as const;
+const scalars=['setupCompleted','dismissedSuggestions','organizationVersion'] as const;
 const legacyScalars=[...scalars,'zoteroEnabled'] as const;
 const own=(object:object,key:string)=>Object.prototype.hasOwnProperty.call(object,key);
 export function stable(value:unknown):string {if(value===undefined)return 'null';if(value===null||typeof value!=='object')return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(stable).join(',')+']';return '{'+Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>JSON.stringify(k)+':'+stable(v)).join(',')+'}';}
@@ -12,7 +12,7 @@ export function newSyncState(device:string=crypto.randomUUID()):SyncState{return
 export function project(data:Notebook):Record<string,SyncValue>{
  const result:Record<string,SyncValue>={};if(data.setupCompleted===false)return result;
  for(const collection of collections)for(const item of (collection==='questionPages'?(data.questionPages??data.notes.filter(n=>n.kind==='question'&&!n.parent).map((n,index)=>({id:'page-'+n.id,rootId:n.id,kind:'question',order:index+1,members:[]}))):data[collection])||[]){const record=item as unknown as Record<string,unknown>;const id=collection==='ocrCache'?JSON.stringify([record.libraryBookId,record.page]):collection==='zoteroCollections'?JSON.stringify([record.serverId,record.key]):record.id;if(typeof id!=='string'||!id)throw Error('有一条记录缺少编号，未进行同步。');if(collection==='libraryBooks'){const {progress,...metadata}=record;result[`${collection}/${encodeURIComponent(id)}`]=metadata;result[`readingProgress/${encodeURIComponent(id)}`]={id,progress:progress||{}};}else result[`${collection}/${encodeURIComponent(id)}`]=item;}
- for(const key of scalars)result['settings/'+key]=data[key]??(key==='dismissedSuggestions'?[]:true);
+ for(const key of scalars){if(key==='organizationVersion'&&data[key]===undefined)continue;result['settings/'+key]=data[key]??(key==='dismissedSuggestions'?[]:true);}
  return result;
 }
 export function baselineDifferences(local:Notebook,cloud:Notebook){
@@ -27,7 +27,7 @@ export function validateOperation(value:unknown):value is Operation {
  if(!value||typeof value!=='object')return false;const op=value as Operation;
  if(typeof op.id!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(op.id)||typeof op.device!=='string'||op.device.length>100||typeof op.at!=='string'||!Number.isFinite(Date.parse(op.at))||typeof op.key!=='string'||op.key.length>2000||!Array.isArray(op.parents)||op.parents.some(p=>typeof p!=='string'||p===op.id)||!own(op,'value'))return false;
  const [collection,id,...extra]=op.key.split('/');if(extra.length||!id)return false;
- if(collection==='settings')return (legacyScalars as readonly string[]).includes(id)&&(id==='dismissedSuggestions'?Array.isArray(op.value):typeof op.value==='boolean');
+ if(collection==='settings')return (legacyScalars as readonly string[]).includes(id)&&(id==='dismissedSuggestions'?Array.isArray(op.value):id==='organizationVersion'?op.value===2:typeof op.value==='boolean');
  if(collection!=='readingProgress'&&!(collections as readonly string[]).includes(collection))return false;
  if(op.value===null)return !(collection==='notes'&&decodeURIComponent(id)==='world');
  if(typeof op.value!=='object'||Array.isArray(op.value))return false;

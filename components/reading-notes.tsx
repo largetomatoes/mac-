@@ -1,5 +1,7 @@
 "use client";
 
+import {processEntries,processSources} from '@/lib/process-note-sources';
+import {RecordRevisionEditor} from './record-revision-editor';
 import {bookThoughtLocation,thoughtSources,thoughtPrimary,sourceLabel} from '@/lib/book-notebook';
 import {ReadingNoteLinks} from "@/components/reading-note-links";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +28,7 @@ type Props = {
 const origins = ["自己的思考", "材料触发的想法", "引用他人观点"];
 const clean = (value: string) => value.trim().replace(/\s+/g, " ");
 const keyOf = (value: string) => clean(value).toLocaleLowerCase("zh-CN");
-const when = (at: string) => new Date(at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+const when = (at: string) => new Date(at).toLocaleString("zh-CN", { year:'numeric', month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const excerpt = (text: string, length = 90) => text.length > length ? `${text.slice(0, length)}…` : text;
 
 export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initialId, initialThoughtId, onClose }: Props) {
@@ -60,12 +62,12 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
   const chapters = useMemo(() => Array.from(new Set(data.readingNotes.filter((note) => keyOf(note.book) === keyOf(book)).map((note) => clean(note.chapter)))), [data.readingNotes, book]);
   const groups = useMemo(() => {
     const grouped = new Map<string, { book: string; author: string; chapters: Map<string, { chapter: string; notes: ReadingNote[] }> }>();
-    for (const note of notes) {
+    for (const note of notes.flatMap(processEntries)) {
       const bookKey = `${keyOf(note.book)}|${keyOf(note.author)}`;
       const bookGroup = grouped.get(bookKey) || { book: clean(note.book), author: clean(note.author), chapters: new Map<string, { chapter: string; notes: ReadingNote[] }>() };
       const chapterKey = keyOf(note.chapter);
       const chapterGroup = bookGroup.chapters.get(chapterKey) || { chapter: clean(note.chapter) || "未标章节", notes: [] as ReadingNote[] };
-      chapterGroup.notes.push(note);
+      if(!chapterGroup.notes.some(n=>n.id===note.id))chapterGroup.notes.push(note);
       chapterGroup.notes.sort((a, b) => a.at.localeCompare(b.at));
       bookGroup.chapters.set(chapterKey, chapterGroup);
       grouped.set(bookKey, bookGroup);
@@ -128,7 +130,7 @@ export function ReadingNotes({ data, questionId, saving, save, onOpenBook, initi
 
     {linkingId&&data.readingNotes.find(n=>n.id===linkingId)&&<ReadingNoteLinks key={linkingId} note={data.readingNotes.find(n=>n.id===linkingId)!} data={data} saving={saving} save={save} onClose={()=>setLinkingId(null)}/>}
     <Sheet open={!!selected} onOpenChange={(open) => { if (!open) { setSelectedId(null); setReplyingId(null); if (standalone) onClose?.(); } }}><SheetContent className="reading-sheet"><div className="reading-sheet-head"><span>{selected?.book}{selected?.chapter ? ` · ${selected.chapter}` : ""}</span><SheetTitle>阅读笔记</SheetTitle><SheetDescription>{[selected?.author,selected?.locator].filter(Boolean).join(" · ")}</SheetDescription></div>{selected && <div className="reading-sheet-scroll">
-      <section className="reading-quote"><span>原文</span><blockquote>{selected.quote}</blockquote></section>
+      <section className="reading-quote"><span>原文</span>{processSources(selected).map(source=><div key={source.id}><small>{sourceLabel(source)}</small><blockquote>{source.quote}</blockquote>{onOpenBook&&source.libraryBookId&&<button type="button" onClick={()=>onOpenBook(source.libraryBookId!,source.sourceLocation,selected.id)}>回到这段原文</button>}</div>)}<RecordRevisionEditor data={data} id={selected.id} kind="process" save={save} saving={saving}/></section>
       <section className="reading-interpretation"><span>我的理解</span><p>{selected.interpretation}</p><small>{when(selected.at)}</small></section>
       <Button variant="ghost" onClick={()=>setLinkingId(selected.id)}>关联问题 · {selected.questionIds.length}</Button>
       {selected.libraryBookId&&onOpenBook&&<Button variant="outline" className="reading-back-to-book" onClick={()=>onOpenBook(selected.libraryBookId!,selected.sourceLocation,selected.id)}><BookOpen/>回到原文</Button>}

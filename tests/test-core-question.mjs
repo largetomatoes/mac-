@@ -1,3 +1,5 @@
+import {load as fixtureLoad} from './load-ts.cjs';
+import {resolve as resolveTestPath,dirname as testDirname,extname as testExt} from 'node:path';
 import ocrCache from '../lib/ocr-cache.cjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -9,7 +11,7 @@ import ts from 'typescript';
 import {z} from 'zod';
 import settings from '../lib/notebook-settings.cjs';
 import backup from '../work/mac-app/asar-src/complete-backup.js';
-function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(!(name in imports))throw Error(name);return imports[name];},Response,console});return module.exports;}
+function load(file,imports={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:name=>{if(name in imports)return imports[name];const target=name.startsWith('@/')?resolveTestPath(name.slice(2)):resolveTestPath(testDirname(file),name);return fixtureLoad(testExt(target)?target:target+'.ts');},crypto:globalThis.crypto,structuredClone,URL,Response,Request,setTimeout,clearTimeout,console});return module.exports;}
 const model=load('lib/notebook.ts',{'./library-folders':load('lib/library-folders.ts')});
 const deletion=load('lib/deletion.ts',{'./notebook':model});
 const copy=v=>JSON.parse(JSON.stringify(v));
@@ -44,12 +46,12 @@ function desktop(initial){let state={version:0,data:copy(initial)},fail=false;co
 function web(initial){let state={version:0,content:JSON.stringify(initial)},fail=false;const DB={prepare(sql){return{bind(...args){return{async first(){return {...state};},async run(){if(fail)throw Error('disk unavailable');if(sql.startsWith('UPDATE')){if(args[2]!==state.version)return{meta:{changes:0}};state={version:state.version+1,content:args[0]};}return{meta:{changes:1}};}};}};}};const api=load('app/api/notebook/route.ts',{'@/lib/ocr-cache.cjs':ocrCache,'@/lib/notebook-settings.cjs':settings,'@/lib/deletion':deletion,'@/lib/notebook':model,'cloudflare:workers':{env:{DB}},zod:{z}});return {get state(){return{version:state.version,data:JSON.parse(state.content)};},set fail(v){fail=v;},put:async(data,version=state.version)=>api.PUT(new Request('http://test/api/notebook',{method:'PUT',body:JSON.stringify({data,version})}))};}
 for(const factory of [desktop,web]){
  const h=factory(fresh);
- assert.equal((await h.put(first)).status,200);
+ const initialResponse=await h.put(first);assert.equal(initialResponse.status,200,factory.name+' '+JSON.stringify(initialResponse.body instanceof ReadableStream?await initialResponse.json():initialResponse.body));
  const before=copy(h.state);
  assert.equal((await h.put({...first,zoteroEnabled:'true'})).status,400);
  assert.equal((await h.put(first,0)).status,409);
  same(h.state,before);
- const next=model.changeCoreQuestion(h.state.data,'怎样理解他人？','', '2026-09-29T13:00:00Z');
+ const next=model.changeCoreQuestion(h.state.data,'怎样理解他人？','补充问题表述', '2026-09-29T13:00:00Z');
  h.fail=true;assert.ok((await h.put(next)).status>=500);same(h.state,before);h.fail=false;
  assert.equal((await h.put(next)).status,200);assert.equal(h.state.data.notes[0].revisions.length,1);
  assert.equal(h.state.data.notes[0].revisions[0].nextTitle,'怎样理解他人？');

@@ -110,3 +110,35 @@ Android 可在 `android` 目录运行 `./gradlew :app:lintRelease :app:testRelea
 
 公开构建材料不包含个人笔记、原书、云凭据、私钥或本机缓存。
 本次只补充许可与构建文档，未重新构建、替换已安装应用或重新发布旧安装包。
+
+
+## 3.14（319）维护说明
+
+
+需要 Node.js 22.13+ 与 npm。先在根目录执行 `npm ci`，再在 `work/mac-app` 执行 `npm ci`。不要把个人资料、云凭据或任何签名私钥放进源码。
+
+## Mac
+
+在 macOS 根目录执行 `node work/mac-app/scripts/build-mac.mjs`。生成 `work/mac-app/release/Wenjian-3.14-macOS-arm64.zip`。安装包使用干净的 `work/mac-app/seed.json`；正式用户资料在应用支持目录，绝不从那里打包。
+
+## Windows
+
+执行 `node work/mac-app/scripts/build-windows.mjs`。生成 `work/mac-app/release/Wenjian-3.14-Windows-x64.zip`。外层目录、可执行文件为英文，ZIP 保留 UTF-8 文件名标志。
+
+## Android
+
+安装 Java 21、Android SDK Platform 36、Build Tools 36，并由使用者阅读及接受 SDK 许可，设置 `JAVA_HOME`、`ANDROID_HOME`。执行 `npm run build:mobile`、`npm run android:sync`，进入 `android` 执行 `./gradlew :app:assembleRelease :app:lintRelease`。
+
+正式覆盖更新必须使用自己已有的应用签名。指定 `WENJIAN_ANDROID_KEYSTORE`、`WENJIAN_ANDROID_PASSWORD_FILE`、`WENJIAN_ANDROID_KEY_ALIAS`、`WENJIAN_ANDROID_CERT_SHA256` 后执行 `node scripts/package-android.mjs`。源码不提供作者的签名私钥。
+
+## 更新与源码对应
+
+公开版本在桌面 `asar-src/package.json` 的 `releaseVersion` 和 Android 的 `versionName` 中保持 3.14。括号构建号来自桌面的 `buildVersion` / `CFBundleVersion` 与 Android 的 `versionCode`，应统一递增。本次为 319。
+
+同版本发布在说明中加入 `<!-- wenjian-build:319 -->`，安装包命名 `Wenjian-3.14-build319-平台`，提供使用原更新签名密钥签署的 `update-manifest-319.json`。清单包含公开版本、整数构建号、平台、完整下载 URL、字节数与 SHA256；只增加构建号也会被319及以后版本发现。未持有原作者的更新私钥时，衍生项目必须替换更新公钥及更新来源，不能给官方应用推送更新。
+
+对应源码标签 `v3.14-build319`。遵守 LICENSE、NOTICE、TRADEMARK.md 及贡献协议；修改记录见 `RELEASE_NOTES_3.14_319.md`。
+
+## 验证
+
+`npx tsc --noEmit --incremental false`；`node tests/test-app-updates.mjs`；`node --test tests/test-app-updater.cjs tests/test-update-installer.cjs`；`node tests/test-sync-desktop-v2.mjs`；`node tests/test-organization-archives.mjs`。其他阅读、卡片、编码、备份及手机 API 回归位于 `tests`。使用虚构资料，避免测试连接个人云账号。

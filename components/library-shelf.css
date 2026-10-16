@@ -89,3 +89,18 @@
 @media(hover:hover){.folder-shelf-folder-actions{opacity:.55}.folder-shelf-folder-row:hover>.folder-shelf-folder-actions,.folder-shelf-folder-row:focus-within>.folder-shelf-folder-actions{opacity:1}.folder-shelf-move{opacity:.7}.folder-shelf-book:hover>.folder-shelf-move,.folder-shelf-book:focus-within>.folder-shelf-move{opacity:1}}
 
 .book-reading-filter{display:flex;align-items:center;gap:8px;padding:2px 14px 12px;font-size:11px;color:#728078}.book-reading-filter select{margin-left:auto;max-width:130px;background:#fafbf7;border:1px solid #dde3da;border-radius:6px;padding:5px 8px;font-size:12px;color:#526b60}.book-finished-badge{display:inline-block;font:10px/1.5 system-ui!important;color:#607b66!important;background:#eaf0e7;padding:1px 5px;border-radius:4px;margin-left:7px;vertical-align:middle;white-space:nowrap}
+
+/* Keep an always reachable drag target in both books and collection folders. */
+.folder-shelf-book-list,.folder-shelf-folders nav,.folder-shelf-drawer nav{
+ scrollbar-width:auto;scrollbar-gutter:stable;overflow-y:scroll;touch-action:pan-y;
+}
+.folder-shelf-book-list::-webkit-scrollbar,.folder-shelf-folders nav::-webkit-scrollbar,.folder-shelf-drawer nav::-webkit-scrollbar{width:14px;height:14px}
+.folder-shelf-book-list::-webkit-scrollbar-track,.folder-shelf-folders nav::-webkit-scrollbar-track,.folder-shelf-drawer nav::-webkit-scrollbar-track{background:#e5e9e2;border-radius:8px}
+.folder-shelf-book-list::-webkit-scrollbar-thumb,.folder-shelf-folders nav::-webkit-scrollbar-thumb,.folder-shelf-drawer nav::-webkit-scrollbar-thumb{background:#a0af9a;border:3px solid #e5e9e2;border-radius:8px;min-height:44px}
+.folder-shelf-book-list::-webkit-scrollbar-thumb:hover,.folder-shelf-folders nav::-webkit-scrollbar-thumb:hover,.folder-shelf-drawer nav::-webkit-scrollbar-thumb:hover{background:#788e72}
+
+/* A separate metadata row keeps the completion check clear at narrow widths. */
+.folder-shelf-open-book{grid-template-columns:minmax(0,1fr);gap:3px;padding:10px 2px 10px 9px}
+.folder-shelf-book-format{grid-row:auto;min-height:15px;padding-top:0;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.folder-shelf-zotero-badge{display:inline-block;width:auto;margin-top:0;padding:0 4px;font-size:9px;line-height:14px}
+.folder-shelf-book-format .book-finished-check{margin-left:1px}

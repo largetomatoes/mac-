@@ -35,26 +35,26 @@ function createUpdater(options){
  const directory=path.resolve(options.directory);let state={state:'idle'},controller=null,job=null;
  const persist=async()=>{await fs.mkdir(directory,{recursive:true,mode:0o700});await atomic(path.join(directory,'status.json'),state);};
  const init=async()=>{try{const old=JSON.parse((await fs.readFile(path.join(directory,'status.json'),'utf8')).replace(/^\uFEFF/,''));if(old.state==='ready'&&old.file&&old.envelope)state=old;}catch{}return {...state};};
- async function download(version){
-  controller=new AbortController();state={state:'downloading',version,completed:0,total:0};await persist();
+ async function download(version,build){
+  controller=new AbortController();state={state:'downloading',version,build,completed:0,total:0};await persist();
   try{
    const releases=await options.releases(),release=releases.find(r=>!r.draft&&!r.prerelease&&r.tag_name==='v'+version);
-   const item=release?.assets?.find(a=>a.name==='update-manifest.json'&&a.state==='uploaded');
+   const item=release?.assets?.find(a=>a.name===(build?'update-manifest-'+build+'.json':'update-manifest.json')&&a.state==='uploaded');
    if(!item||!item.browser_download_url.startsWith('https://github.com/largetomatoes/mac-/releases/download/v'+version+'/'))throw Error('此版本尚未提供应用内更新清单。');
    const envelope=await (options.getJson||getJson)(item.browser_download_url,controller.signal);
-   const {asset}=verifyManifest(envelope,options.platform,options.arch,options.build,version,options.verificationKey||publicKey);
-   const space=await fs.statfs(directory);if(Number(space.bavail)*Number(space.bsize)<asset.size*5)throw Error('磁盘空间不足，请至少保留更新包大小的5倍可用空间。');state.total=asset.size;const suffix=options.platform==='darwin'?'.zip':'.zip',file=path.join(directory,'update-'+version+suffix),temporary=file+'.partial';await fs.rm(temporary,{force:true});
+   const {asset,manifest}=verifyManifest(envelope,options.platform,options.arch,options.build,version,options.verificationKey||publicKey);if(build&&manifest.build!==build)throw Error('更新构建号与所选版本不一致。');
+   const space=await fs.statfs(directory);if(Number(space.bavail)*Number(space.bsize)<asset.size*5)throw Error('磁盘空间不足，请至少保留更新包大小的5倍可用空间。');state.total=asset.size;const suffix=options.platform==='darwin'?'.zip':'.zip',file=path.join(directory,'update-'+version+'-'+manifest.build+suffix),temporary=file+'.partial';await fs.rm(temporary,{force:true});
    const handle=await fs.open(temporary,'wx',0o600),hash=crypto.createHash('sha256');let count=0;
    try{const response=await (options.responseFor||responseFor)(asset.url,controller.signal);for await(const chunk of response){if(controller.signal.aborted)throw Error('更新下载已取消。');count+=chunk.length;if(count>asset.size)throw Error('更新包超过清单大小。');hash.update(chunk);let offset=0;while(offset<chunk.length){const written=await handle.write(chunk,offset,chunk.length-offset);if(!written.bytesWritten)throw Error('更新包未完整写入，请检查磁盘。');offset+=written.bytesWritten;}state.completed=count;}await handle.sync();}finally{await handle.close();}
    state={...state,state:'verifying'};await persist();
    if(count!==asset.size||hash.digest('hex')!==asset.sha256)throw Error('更新包校验失败，未修改当前应用。');
-   await zipEntries(temporary);await fs.rename(temporary,file);state={state:'ready',version,completed:count,total:count,file,envelope};await persist();
+   await zipEntries(temporary);await fs.rename(temporary,file);state={state:'ready',version,build:manifest.build,completed:count,total:count,file,envelope};await persist();
   }catch(error){const failed={state:controller?.signal.aborted?'cancelled':'failed',version,error:controller?.signal.aborted?'下载已取消':error.message};const files=await fs.readdir(directory).catch(()=>[]);for(const name of files.filter(n=>n.endsWith('.partial')))await fs.rm(path.join(directory,name),{force:true});state=failed;await persist();}
   finally{controller=null;job=null;}
  }
  return {
   init,status:()=>({...state,file:undefined,envelope:undefined}),
-  start(version){if(state.state==='ready'&&state.version===version)return {...state};if(job)return {...state};if(!/^3[.][0-9]{1,50}$/.test(version))throw Error('更新版本无效。');job=download(version);job.catch(()=>{});return {...state};},
+  start(version,build){if(build!==undefined&&(!Number.isSafeInteger(build)||build<=options.build))throw Error('更新构建号无效或已安装。');if(state.state==='ready'&&state.version===version&&(!build||state.build===build))return {...state};if(job)return {...state};if(!/^3[.][0-9]{1,50}$/.test(version))throw Error('更新版本无效。');job=download(version,build);job.catch(()=>{});return {...state};},
   cancel(){controller?.abort();return {...state};},
   async install(){
    if(state.state!=='ready')throw Error('请先下载并校验更新。');
