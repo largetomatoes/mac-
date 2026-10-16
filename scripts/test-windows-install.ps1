@@ -8,7 +8,8 @@ $installed=Join-Path $env:LOCALAPPDATA 'Programs\Wenjian'
 $data=Join-Path $env:APPDATA '问间'
 if((Test-Path $installed) -or (Test-Path $data)){throw 'This test requires an empty disposable Windows runner'}
 $report=[ordered]@{platform='Windows';installer=$setup[0].Name;checks=@()}
-function Check($condition,$label){if(-not $condition){throw $label};$script:report.checks+=@($label)}
+function Check($condition,$label){if(-not $condition){throw $label};$script:report.checks+=@($label);Write-Output ('PASS: '+$label);$script:report|ConvertTo-Json -Depth 20|Set-Content (Join-Path $artifacts 'windows-install-report.json') -Encoding UTF8}
+function InstallSetup { Write-Output 'Starting silent setup';$process=Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -PassThru;if(-not $process.WaitForExit(180000)){Get-Process|Select-Object Id,ProcessName,MainWindowTitle|ConvertTo-Json|Set-Content (Join-Path $artifacts 'windows-process-report.json');Stop-Process -Id $process.Id -Force;throw 'Setup timed out after 180 seconds'};return $process }
 function Launch($exe){
  $app=Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=0' -PassThru
  for($i=0;$i -lt 120;$i++){
@@ -35,7 +36,7 @@ try{
  & node scripts/test-windows-fonts.cjs $data $artifacts
  if($LASTEXITCODE -ne 0){throw 'Actual Windows font rendering verification failed'}
  CloseApp $run.app
- $install=Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
+ $install=InstallSetup
  Check ($install.ExitCode -eq 0) 'Silent installation succeeds without administrator privileges'
  Check (Test-Path (Join-Path $installed 'Uninstall.exe')) 'Uninstaller is installed'
  $run=Launch (Join-Path $installed 'Wenjian.exe')
@@ -49,7 +50,7 @@ try{
  $css=Invoke-WebRequest ($run.origin+'/fonts/windows-fonts.css')
  Check ($css.Content -match 'Wenjian Serif') 'Typography CSS is packaged'
  CloseApp $run.app
- $install=Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
+ $install=InstallSetup
  Check ($install.ExitCode -eq 0) 'Reinstall replaces existing installation successfully'
  $run=Launch (Join-Path $installed 'Wenjian.exe')
  $book=Invoke-RestMethod ($run.origin+'/api/notebook')

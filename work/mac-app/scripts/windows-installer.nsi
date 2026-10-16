@@ -26,13 +26,13 @@ Var Stage
 Var Previous
 Function .onInit
  ${IfNot} ${RunningX64}
-  MessageBox MB_ICONSTOP "需要 64 位 Windows。"
+  MessageBox MB_ICONSTOP "需要 64 位 Windows。" /SD IDOK
   Abort
  ${EndIf}
  SetRegView 64
  ReadRegDWORD $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Wenjian" "Build"
  ${If} $0 > ${APP_BUILD}
-  MessageBox MB_ICONSTOP "已安装更新的构建，请使用最新安装包。"
+  MessageBox MB_ICONSTOP "已安装更新的构建，请使用最新安装包。" /SD IDOK
   Abort
  ${EndIf}
  SetShellVarContext current
@@ -42,7 +42,7 @@ Function CheckClosed
  IfFileExists "$INSTDIR\Wenjian.exe" 0 done
  System::Call 'kernel32::CreateFileW(w "$INSTDIR\Wenjian.exe", i 0x80000000, i 0, p 0, i 3, i 0, p 0) p.r0'
  ${If} $0 == -1
-  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "请先在问间中保存内容并退出，再点击重试。" IDRETRY retry
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "请先在问间中保存内容并退出，再点击重试。" /SD IDCANCEL IDRETRY retry
   Abort
  ${EndIf}
  System::Call 'kernel32::CloseHandle(p r0)'
@@ -54,13 +54,15 @@ Section "问间" SEC_MAIN
  StrCpy $Stage "$INSTDIR.install-${APP_BUILD}-$1"
  StrCpy $Previous "$INSTDIR.previous-${APP_BUILD}-$1"
  IfFileExists "$Previous\*" 0 +3
-  MessageBox MB_ICONSTOP "发现此前安装的恢复目录，请先保留该目录并联系维护者。"
+  MessageBox MB_ICONSTOP "发现此前安装的恢复目录，请先保留该目录并联系维护者。" /SD IDOK
   Abort
  ClearErrors
  SetOutPath "$Stage"
  File /r "${APP_DIR}\*.*"
  WriteUninstaller "$Stage\Uninstall.exe"
  IfErrors install_failed
+ ; Windows locks the current working directory; release it before renaming stage.
+ SetOutPath "$TEMP"
  ClearErrors
  IfFileExists "$INSTDIR\*" 0 new_install
  Rename "$INSTDIR" "$Previous"
@@ -84,7 +86,8 @@ Section "问间" SEC_MAIN
  restore_previous:
  Rename "$Previous" "$INSTDIR"
  install_failed:
- MessageBox MB_ICONSTOP "安装未完成，原程序和资料已保留。请关闭问间后重试。"
+ SetErrorLevel 1
+ MessageBox MB_ICONSTOP "安装未完成，原程序和资料已保留。请关闭问间后重试。" /SD IDOK
  Abort
  finished:
 SectionEnd
@@ -94,13 +97,14 @@ Function un.onInit
  IfFileExists "$INSTDIR\Wenjian.exe" 0 done
  System::Call 'kernel32::CreateFileW(w "$INSTDIR\Wenjian.exe", i 0x80000000, i 0, p 0, i 3, i 0, p 0) p.r0'
  ${If} $0 == -1
-  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "请先保存并退出问间，再卸载。资料将保留在本机。" IDRETRY retry
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "请先保存并退出问间，再卸载。资料将保留在本机。" /SD IDCANCEL IDRETRY retry
   Abort
  ${EndIf}
  System::Call 'kernel32::CloseHandle(p r0)'
  done:
 FunctionEnd
 Section "Uninstall"
+ SetOutPath "$TEMP"
  SetRegView 64
  SetShellVarContext current
  ; Only remove installed program files. Never remove AppData, cloud or external books.
