@@ -14,7 +14,11 @@
     "db:generate": "drizzle-kit generate",
     "build:mobile": "vite build --config mobile/vite.config.mjs",
     "android:sync": "cap sync android",
-    "test:sync": "node tests/test-device-sync.mjs && node tests/test-sync-client.mjs"
+    "test:sync": "node tests/test-device-sync.mjs && node tests/test-sync-client.mjs",
+    "build:pwa": "node scripts/build-pwa.mjs",
+    "build:web-app": "node scripts/build-web-host.mjs",
+    "preview:web-app": "node webapp/preview.mjs",
+    "test:web-relay": "node --test webapp/test-relay.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

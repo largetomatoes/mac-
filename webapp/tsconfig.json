@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "./*.ts",
+    "./*.tsx",
+    "../mobile/**/*.ts",
+    "../mobile/**/*.tsx",
+    "../lib/**/*.ts",
+    "../components/**/*.tsx",
+    "../hooks/**/*.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "./host",
+    "./.host-workspace",
+    "./host-dist",
+    "./dist",
+    "./public"
+  ]
+}

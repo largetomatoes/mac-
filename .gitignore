@@ -105,3 +105,10 @@ next-env.d.ts
 # Installer sources needed to reproduce Windows releases
 !/work/mac-app/scripts/build-windows-installer.mjs
 !/work/mac-app/scripts/windows-installer.nsi
+
+# Independent Web App generated assets
+/webapp/dist/
+/webapp/static/reader/
+/webapp/public/
+/webapp/.host-workspace/
+/webapp/host-dist/

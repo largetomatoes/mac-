@@ -94,6 +94,7 @@ async function runJournal(progress?:(progress:SyncProgress)=>void,epoch='legacy'
  throw Error('本机正在连续保存，稍后会重新同步。');
 }
 export async function syncBooks(snapshot:Envelope,progress?:(progress:SyncProgress)=>void):Promise<Envelope>{
+ const connection=await syncApi<{bookPolicy?:string}>('identity');const onDemand=connection.bookPolicy==='on-demand';
  const target=snapshot.sync?.target;if(!target)throw Error('请先完成笔记同步，再同步书籍。');
  const books=snapshot.data.libraryBooks.filter(book=>book.storedFile&&['pdf','epub'].includes(book.format));
  const errors:Record<string,string>={};let uploaded=0,completed=0,transferred=0;
@@ -111,6 +112,7 @@ export async function syncBooks(snapshot:Envelope,progress?:(progress:SyncProgre
     await syncApi('book',{action:'upload',target,id:book.id});uploaded++;transferred++;
    }else if(!local.available){
     if(!present){errors[book.id]='云端尚无原件，请在保留原书的任一设备点击同步。';continue;}
+    if(onDemand){completed++;continue;}
     progress?.({stage:'books',message:'正在下载《'+book.title+'》',completed,total:books.length});
     await syncApi('book',{action:'download',target,id:book.id});transferred++;
    }

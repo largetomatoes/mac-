@@ -1,0 +1,15 @@
+import React,{useState,useEffect,useSyncExternalStore} from 'react';
+import {Button} from '../components/ui/button';
+import {exportWebNotes,webStorageInfo,listWebBackups,restoreWebBackup,downloadText} from './platform';
+import {dbGet} from './storage';
+import {subscribeWebState,getWebState,applyWebUpdate} from './pwa';
+import './web.css';
+
+const mb=(n=0)=>(n/1024/1024).toFixed(1)+' MB';
+export function WebSettings(){const state=useSyncExternalStore(subscribeWebState,getWebState,getWebState),[info,setInfo]=useState<Awaited<ReturnType<typeof webStorageInfo>>>(),[notice,setNotice]=useState(''),[backups,setBackups]=useState<string[]>([]),[selected,setSelected]=useState(''),[confirmation,setConfirmation]=useState(''),[busy,setBusy]=useState(false);useEffect(()=>{void webStorageInfo().then(setInfo).catch(()=>{});void listWebBackups().then(setBackups).catch(()=>{});},[]);async function act(fn:()=>Promise<unknown>,success:string){setBusy(true);setNotice('');try{await fn();setNotice(success);}catch(error){setNotice((error as Error).message);}finally{setBusy(false);}}
+ return <section className="web-settings"><h3>iPhone / iPad Web App</h3><p>Safari → 分享 → 添加到主屏幕。以后从桌面的问间图标进入。</p><dl><div><dt>网络</dt><dd>{state.offline?'离线，继续保存到本机':'已联网'}</dd></div><div><dt>离线应用</dt><dd>{state.ready?'已准备':'正在准备'}</dd></div><div><dt>本机使用</dt><dd>{mb(info?.usage)}</dd></div><div><dt>存储保护</dt><dd>{info?.persistent?'已获持久保存权限':'由浏览器管理'}</dd></div></dl>{state.error&&<p role="status">{state.error}</p>}
+ {!info?.persistent&&<Button variant="outline" disabled={busy} onClick={()=>void act(async()=>{const granted=await navigator.storage.persist();setInfo(await webStorageInfo());if(!granted)throw Error('浏览器暂未授予持久保存。添加到主屏幕后再试，并及时同步。');},'已申请本机存储保护。')}>申请持久保存</Button>}
+ <p>笔记先保存到本机，再同步到坚果云。书籍点开时下载，也可在书籍菜单提前下载。请勿将清除网站数据当作清理书籍。</p><Button variant="outline" disabled={busy} onClick={()=>void act(exportWebNotes,'笔记与草稿已导出；书籍原件请保留在坚果云或电脑。')}>导出笔记与草稿</Button>
+ {backups.length>0&&<details><summary>本机恢复副本（{backups.length}）</summary><p>接入资料库前自动保存笔记、草稿和关联记录。书籍原件仍保留在本机下载中。恢复会先保存当前副本，然后重新接入云端。</p><select aria-label="本机恢复副本" value={selected} onChange={e=>{setSelected(e.target.value);setConfirmation('');}}><option value="">选择恢复时间</option>{backups.map(key=><option key={key} value={key}>{new Date(key.slice(11,35)).toLocaleString('zh-CN')}</option>)}</select>{selected&&<><Button variant="outline" disabled={busy} onClick={()=>void act(async()=>{const text=await dbGet<string>(selected);if(!text)throw Error('副本不存在。');downloadText(text,'问间-恢复副本.json');},'恢复副本已导出。')}>导出这份副本</Button><label>输入“恢复”确认<input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label><Button disabled={busy||confirmation!=='恢复'} onClick={()=>void act(()=>restoreWebBackup(selected),'')}>备份当前内容并恢复</Button></>}</details>}
+ {state.update&&<div className="web-update"><p>Web App 有可用更新。请先保存正在填写的内容。</p><Button onClick={applyWebUpdate}>重新打开并更新</Button></div>}{notice&&<p role="status">{notice}</p>}<small>问间 Web · 3.14（321）基础 · Web 2</small></section>;
+}

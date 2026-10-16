@@ -1,0 +1,12 @@
+html[data-wenjian-web=true]{-webkit-text-size-adjust:100%;background:#faf9f5}
+html[data-wenjian-web=true] body{overscroll-behavior-y:none}
+html[data-wenjian-web=true] input,html[data-wenjian-web=true] textarea,html[data-wenjian-web=true] select{font-size:16px}
+.web-settings{display:grid;gap:14px;padding:14px 0;color:#4d5959;min-width:0;border-top:1px solid #dce1df}
+.web-settings h3{font-size:16px;color:#294738}.web-settings p,.web-settings small{font-size:13px;line-height:1.8}
+.web-settings dl{display:grid;gap:8px;font-size:13px}.web-settings dl div{display:flex;justify-content:space-between;gap:12px}
+.web-settings dd{text-align:right;color:#294738}.web-settings details{padding:14px;background:#edf0e9;border-radius:9px;line-height:1.8}
+.web-settings details>*{margin-top:10px}.web-settings select,.web-settings input{width:100%;border:1px solid #cdd6ce;border-radius:6px;background:#fff;padding:8px;min-width:0}
+.web-settings label{display:grid;gap:6px;font-size:13px}.web-remember{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px!important}.web-remember input{width:18px;height:18px}.web-remember small{flex-basis:100%;font-size:12px;line-height:1.7;color:#737e72}
+.web-local-status{font-size:11px;color:#6c786b;background:#edf0e9;border-bottom:1px solid #dce1df;padding:6px 18px;line-height:1.7}
+.web-import-error{max-width:440px;margin:40px auto;padding:24px;line-height:1.9;color:#294738}
+@media(display-mode:standalone){html[data-wenjian-web=true] .mobile-header{padding-top:max(12px,env(safe-area-inset-top))}}
