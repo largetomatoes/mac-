@@ -49,3 +49,10 @@ for(const repo of ['wenjian-software','mac-']){
 }
 for(const bad of ['https://github.com/largetomatoes/wenjian-software-other/releases','https://github.com/other/wenjian-software/releases','http://github.com/largetomatoes/wenjian-software/releases','https://user:secret@github.com/largetomatoes/wenjian-software/releases','https://github.com:444/largetomatoes/wenjian-software/releases','https://github.com/largetomatoes/wenjian-software/releases/download/v3.14/a%2Fb.zip','https://github.com/largetomatoes/wenjian-software/releases?url=evil'])assert.equal(module.exports.validReleaseUrl(bad),false,bad);
 console.log('PASS: renamed and historical repository releases accepted on three platforms, lookalike sources rejected');
+
+const independent={tag_name:'v3.14-build321',html_url:'https://github.com/largetomatoes/wenjian-software/releases/tag/v3.14-build321',body:'<!-- wenjian-build:321 -->',assets:[{name:'Wenjian-3.14-build321-Windows-x64.zip',state:'uploaded',browser_download_url:'https://github.com/largetomatoes/wenjian-software/releases/download/v3.14-build321/Wenjian-3.14-build321-Windows-x64.zip'}]};
+const old={...independent,tag_name:'v3.14',body:'<!-- wenjian-build:320 -->'};
+assert.equal(selectUpdate([old,independent],{platform:'win32',arch:'x64',version:'3.14',build:'320'}).download,independent.assets[0].browser_download_url);
+assert.equal(selectUpdate([independent,old],{platform:'win32',arch:'x64',version:'3.14',build:'321'}).state,'current');
+assert.equal(selectUpdate([{...independent,body:'<!-- wenjian-build:322 -->'}],{platform:'win32',arch:'x64',version:'3.14',build:'320'}).state,'empty');
+console.log('PASS: independent build Release sorted by build, tag/body mismatch rejected');

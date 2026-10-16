@@ -1,0 +1,9 @@
+/* Windows-only aliases; Mac continues using its system typefaces. */
+@font-face{font-family:"Wenjian Sans";src:url('/fonts/NotoSansSC-variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:"Wenjian Serif";src:url('/fonts/NotoSerifSC-variable.woff2') format('woff2');font-weight:200 900;font-display:swap}
+/* Existing components name these Mac families explicitly, including font shorthands. */
+@font-face{font-family:"PingFang SC";src:url('/fonts/NotoSansSC-variable.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:"Songti SC";src:url('/fonts/NotoSerifSC-variable.woff2') format('woff2');font-weight:200 900;font-display:swap}
+:root{--font-sans:"Wenjian Sans","Microsoft YaHei UI",sans-serif;--font-serif:"Wenjian Serif","SimSun",serif}
+body{font-family:var(--font-sans);text-rendering:optimizeLegibility;font-synthesis:none}
+button,input,select,textarea{font-family:inherit}

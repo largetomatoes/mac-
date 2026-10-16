@@ -3,7 +3,7 @@ const {createReadStream}=require('node:fs');
 const publicKey=require('./update-public-key.cjs');
 const hosts=new Set(['github.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com']);
 function trustedUrl(value){const u=new URL(value);if(u.protocol!=='https:'||!hosts.has(u.hostname)||u.username||u.password||u.port)throw Error('更新地址不受信任。');return u;}
-function releaseAssetUrl(value,version){try{const url=trustedUrl(value);return url.hostname==='github.com'&&!url.search&&!url.hash&&!/%2f|%5c/i.test(url.pathname)&&['/largetomatoes/wenjian-software/releases','/largetomatoes/mac-/releases'].some(root=>url.pathname.startsWith(root+'/download/v'+version+'/'));}catch{return false;}}
+function releaseAssetUrl(value,tag){try{const url=trustedUrl(value);return url.hostname==='github.com'&&!url.search&&!url.hash&&!/%2f|%5c/i.test(url.pathname)&&['/largetomatoes/wenjian-software/releases','/largetomatoes/mac-/releases'].some(root=>url.pathname.startsWith(root+'/download/'+tag+'/'));}catch{return false;}}
 function responseFor(value,signal,redirects=0){return new Promise((resolve,reject)=>{let url;try{url=trustedUrl(value);}catch(e){reject(e);return;}
  const request=https.get(url,{headers:{'User-Agent':'Wenjian-Signed-Updater','Accept':'application/octet-stream'},signal},response=>{
   if([301,302,303,307,308].includes(response.statusCode)){response.resume();if(redirects>=5||!response.headers.location)return reject(Error('更新跳转过多。'));responseFor(new URL(response.headers.location,url).href,signal,redirects+1).then(resolve,reject);return;}
@@ -17,7 +17,8 @@ function verifyManifest(envelope,platform,arch,currentBuild,version,key=publicKe
  if(manifest.schema!==1||manifest.version!==version||!Number.isInteger(manifest.build)||manifest.build<=currentBuild||!Array.isArray(manifest.assets))throw Error('更新版本信息不匹配或已经安装。');
  const asset=manifest.assets.find(a=>a.platform===platform&&a.arch===arch);
  if(!asset||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>1024*1024*1024||!/^[a-f0-9]{64}$/.test(asset.sha256))throw Error('没有有效的本平台更新包。');
- if(!releaseAssetUrl(asset.url,version))throw Error('更新包来源不匹配。');
+ const tag=manifest.tag||'v'+version;if(tag!=='v'+version&&tag!=='v'+version+'-build'+manifest.build)throw Error('更新标签与构建号不一致。');
+ if(!releaseAssetUrl(asset.url,tag))throw Error('更新包来源不匹配。');
  return {manifest,asset};
 }
 async function hashFile(file){const hash=crypto.createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
@@ -39,9 +40,9 @@ function createUpdater(options){
  async function download(version,build){
   controller=new AbortController();state={state:'downloading',version,build,completed:0,total:0};await persist();
   try{
-   const releases=await options.releases(),release=releases.find(r=>!r.draft&&!r.prerelease&&r.tag_name==='v'+version);
+   const releases=await options.releases(),release=releases.find(r=>!r.draft&&!r.prerelease&&(r.tag_name===(build?'v'+version+'-build'+build:'v'+version)||r.tag_name==='v'+version));
    const item=release?.assets?.find(a=>a.name===(build?'update-manifest-'+build+'.json':'update-manifest.json')&&a.state==='uploaded');
-   if(!item||!releaseAssetUrl(item.browser_download_url,version))throw Error('此版本尚未提供应用内更新清单。');
+   if(!item||!releaseAssetUrl(item.browser_download_url,release.tag_name))throw Error('此版本尚未提供应用内更新清单。');
    const envelope=await (options.getJson||getJson)(item.browser_download_url,controller.signal);
    const {asset,manifest}=verifyManifest(envelope,options.platform,options.arch,options.build,version,options.verificationKey||publicKey);if(build&&manifest.build!==build)throw Error('更新构建号与所选版本不一致。');
    const space=await fs.statfs(directory);if(Number(space.bavail)*Number(space.bsize)<asset.size*5)throw Error('磁盘空间不足，请至少保留更新包大小的5倍可用空间。');state.total=asset.size;const suffix=options.platform==='darwin'?'.zip':'.zip',file=path.join(directory,'update-'+version+'-'+manifest.build+suffix),temporary=file+'.partial';await fs.rm(temporary,{force:true});

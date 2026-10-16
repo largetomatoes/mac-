@@ -101,3 +101,7 @@ next-env.d.ts
 !/work/mac-app/asar-src/text-encoding.cjs
 .keystore_pass
 *.idsig
+
+# Installer sources needed to reproduce Windows releases
+!/work/mac-app/scripts/build-windows-installer.mjs
+!/work/mac-app/scripts/windows-installer.nsi

@@ -1,8 +1,8 @@
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';import assert from 'node:assert/strict';import {webcrypto,createHash} from 'node:crypto';
 const initial=JSON.parse(fs.readFileSync('work/mac-app/seed.json')).data,objects=new Map();let writes=0,failCleanup=false;const remoteRequests=[];
 function load(file,imports,extra={}){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:m,exports:m.exports,require:n=>imports[n],Error,structuredClone,crypto:webcrypto,TextEncoder,CustomEvent,window:{dispatchEvent(){}},...extra});return m.exports;}
-const core=load('lib/sync/core.ts',{});const hash=t=>createHash('sha256').update(t).digest('hex');
-function device(name,data=initial){const d={store:{version:0,syncRevision:0,data:structuredClone(data),sync:{...core.newSyncState(),enabled:true}},backups:0,events:[]};const imports={'./core':core,'../notebook':{initialNotebook:initial}},proto={};imports['./protocol']=proto;
+const equality=load('lib/value-equal.ts');const core=load('lib/sync/core.ts',{});const hash=t=>createHash('sha256').update(t).digest('hex');
+function device(name,data=initial){const d={store:{version:0,syncRevision:0,data:structuredClone(data),sync:{...core.newSyncState(),enabled:true}},backups:0,events:[]};const imports={'../value-equal':equality,'./core':core,'../notebook':{initialNotebook:initial}},proto={};imports['./protocol']=proto;
  const api=load('lib/sync/client.ts',imports,{window:{dispatchEvent:e=>d.events.push(e)},fetch:async(url,init={})=>{const body=init.body?JSON.parse(init.body):{},route=url.split('/').at(-1);let result,status=200;
  if(route==='identity')result={configured:true,verified:true,protocol:2,deviceName:name,target:'fake-library'};
  else if(route==='local')result=structuredClone(d.store);
@@ -75,3 +75,14 @@ windows319.store.data=cardsDomain.editCard(windows319.store.data,'shared-card',{
 for(const d of [desktop319,android319]){assert.equal(d.store.data.cards[0].text,'后来改写的想法');assert.equal(d.store.data.cards[0].revisions[0].text,'先记下的想法');assert.equal(archives.visibleNotebook(d.store.data).cards.length,0);assert.equal(d.store.data.cards[0].adoptions.length,1);}
 android319.store.data=archives.restoreArchived(android319.store.data,android319.store.data.recordArchives[0].batchId);android319.store.version++;await android319.api.syncNow();await desktop319.api.syncNow();assert.equal(archives.visibleNotebook(desktop319.store.data).cards.length,1);
 console.log('PASS: Mac/Windows/Android new page placements, format version, card tags/history/adoptions, two-source chapter notes and archive/restore round-trip');
+
+// A restart may reclaim ONLY an exact locally retained task, with the server ETag.
+objects.clear();const recovering=device('Android recovery',trial);let endings=[];
+recovering.protocol.setLeaseRecovery({begin:async(target,owner)=>{assert.equal(target,'fake-library');return {recoverableOwners:['dead-local-task'],deviceName:'Android test'};},end:async(target,owner,released,succeeded)=>{endings.push({owner,released,succeeded});}});
+objects.set('lease.json',JSON.stringify({owner:'dead-local-task',until:Date.now()+600000,deviceName:'Android test'}));
+await recovering.protocol.withCloudLease('fake-library',async()=>{assert.equal(JSON.parse(objects.get('lease.json')).deviceName,'Android test');});assert(endings.at(-1).released&&endings.at(-1).succeeded);assert.equal(JSON.parse(objects.get('lease.json')).owner,'');
+objects.set('lease.json',JSON.stringify({owner:'another-live-task',until:Date.now()+600000,deviceName:'Other device'}));
+await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>{throw Error('must not enter')}),/Other device.*正在同步/);assert.equal(JSON.parse(objects.get('lease.json')).owner,'another-live-task');assert(!endings.at(-1).succeeded);
+objects.set('lease.json',JSON.stringify({owner:'same-name-other-token',until:Date.now()+600000,deviceName:'Android test'}));await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>{}),/正在同步/);assert.equal(JSON.parse(objects.get('lease.json')).owner,'same-name-other-token','same device name is never sufficient proof');
+objects.set('lease.json',JSON.stringify({owner:'dead-local-task',until:Date.now()+600000}));await assert.rejects(recovering.protocol.withCloudLease('fake-library',async()=>{throw Error('simulated job failure')}),/simulated job failure/);assert(endings.at(-1).released&&!endings.at(-1).succeeded);
+console.log('PASS: exact prior task recovery, conditional ownership, device-name-only rejection, foreign live task protection and failed-job cleanup');

@@ -15,29 +15,41 @@ import maintenance from '../lib/maintenance.cjs';
 function load(file,imports={},globals={}){
  const module={exports:{}};
  const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- vm.runInNewContext(code,{module,exports:module.exports,require:name=>{assert.ok(name in imports,`unexpected import ${name}`);return imports[name];},crypto:webcrypto,structuredClone,Error,URL,Response,TextEncoder,...globals},{filename:file});
+ vm.runInNewContext(code,{module,exports:module.exports,require:name=>{assert.ok(name in imports,`unexpected import ${name}`);return imports[name];},crypto:webcrypto,structuredClone,Error,URL,Response,TextEncoder,TextDecoder,atob,btoa,Uint8Array,...globals},{filename:file});
  return module.exports;
 }
 const folders=load('lib/library-folders.ts');
 const notebook=load('lib/notebook.ts',{'./library-folders':folders,'./page-organization.cjs':organization});
-const core=load('lib/sync/core.ts');
+const core=load('lib/sync/core.ts');const equality=load('lib/value-equal.ts');const storeChunks=load('mobile/native-store.ts');
 const updates=load('lib/app-updates.ts');
 const original={id:'book-1',title:'中文书籍 📖',author:'测试作者',format:'pdf',storedFile:'中文原件.pdf',originalName:'中文原件.pdf',addedAt:'2026-10-13T00:00:00.000Z',progress:{page:3},inReadingLibrary:true};
 const cloudFile={key:'books/'+ 'a'.repeat(64)+'.pdf',sha256:'a'.repeat(64),size:128};
 
-function device(){
+function device({android=false,initial}={}){
  const state={store:{version:7,syncRevision:3,data:notebook.normalize({...structuredClone(notebook.initialNotebook),setupCompleted:true,libraryBooks:[structuredClone(original)]}),sync:{...core.newSyncState('android-test'),target:'cloud-a',enabled:true},drafts:{reader:{text:'未保存的草稿'}}},writes:[],bookInfo:new Map(),transfers:[],reader:null};
+ if(initial)state.store=initial;
+ state.bridge={maxReadBytes:0,maxWriteChars:0,reads:0,writes:0};let readBytes,readOffset=0,staged=[];
  const native={
-  readStore:async()=>({text:JSON.stringify(state.store)}),
-  writeStore:async({text})=>{state.writes.push(text);state.store=JSON.parse(text);return {ok:true};},
+  beginStoreRead:async()=>{readBytes=Buffer.from(JSON.stringify(state.store));readOffset=0;return {exists:true,id:"reader",size:readBytes.length};},
+  readStoreChunk:async()=>{const b=readBytes.subarray(readOffset,readOffset+65536);readOffset+=b.length;state.bridge.maxReadBytes=Math.max(state.bridge.maxReadBytes,b.length);state.bridge.reads++;return {data:b.toString("base64"),done:!b.length};},
+  endStoreRead:async()=>{readBytes=undefined},
+  beginStoreWrite:async()=>{staged=[];return {id:"writer"}},
+  appendStoreChunk:async({text})=>{state.bridge.maxWriteChars=Math.max(state.bridge.maxWriteChars,text.length);state.bridge.writes++;staged.push(text)},
+  finishStoreWrite:async()=>{if(state.failSave)throw Error("disk full");const text=staged.join("");const next=JSON.parse(text);state.writes.push(text.length);state.store=next;staged=[];},
+  abortStoreWrite:async()=>{staged=[];state.aborted=true},
+  beginSyncLease:async()=>({recoverableOwners:[],deviceName:"Android test"}),finishSyncLease:async()=>({}),
+  getSyncIdentity:async()=>({configured:true,verified:true,target:"cloud-a",provider:"nutstore",protocol:1}),
+  remote:async body=>{state.cloud??=new Map();if(body.action==="list")return {keys:[...state.cloud.keys()]};if(body.action==="get")return {text:state.cloud.get(body.key)};if(body.action==="put"){state.cloud.set(body.key,body.text);return {ok:true}}throw Error("unexpected cloud action")},
+  readStore:async()=>{assert(!android,"Android must not read the entire native store through one bridge message");return {text:JSON.stringify(state.store)}},
+  writeStore:async({text})=>{assert(!android,"Android must not write a whole native store through one bridge message");state.writes.push(text);state.store=JSON.parse(text);return {ok:true};},
   bookInfo:async({name})=>state.bookInfo.get(name)||{available:false,size:0,uri:''},
   transferBook:async input=>{state.transfers.push(structuredClone(input));return state.transfer?state.transfer(input):structuredClone(cloudFile);},
   setSyncConnection:async({config})=>{state.store={...state.store,syncRevision:state.store.syncRevision+1,sync:{...state.store.sync,target:config.target,enabled:false}};return {configured:true,target:config.target};},
  };
  const window={fetch:async()=>{throw Error('unexpected external request');}};
  state.module=load('mobile/platform.ts',{
-  '@capacitor/app':{App:{}},'@capacitor/core':{Capacitor:{isNativePlatform:()=>true,convertFileSrc:uri=>uri},registerPlugin:name=>{assert.equal(name,'WenjianStorage');return native;}},
-  '../lib/record-archives.cjs':archives,'../lib/notebook-settings.cjs':settings,'../lib/maintenance.cjs':maintenance,'../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
+  '@capacitor/app':{App:{}},'@capacitor/core':{Capacitor:{isNativePlatform:()=>true,getPlatform:()=>android?'android':'ios',convertFileSrc:uri=>uri},registerPlugin:name=>{assert.equal(name,'WenjianStorage');return native;}},
+  '../lib/value-equal':equality,'./native-store':storeChunks,'../lib/sync/client':{setSyncTransport:fn=>{state.syncTransport=fn;}},'../lib/sync/protocol':{setLeaseRecovery:fn=>{state.leaseRecovery=fn;}},'../lib/record-archives.cjs':archives,'../lib/notebook-settings.cjs':settings,'../lib/maintenance.cjs':maintenance,'../lib/app-updates':updates,'../lib/notebook':notebook,'../lib/ocr-cache.cjs':ocrCache,'../lib/sync/core':core,
   '../lib/reader-platform':{setReaderPlatform:platform=>{state.reader=platform;}},
  },{window,location:{origin:'https://localhost'}});
  state.module.installMobileApi();
@@ -143,3 +155,16 @@ test('mobile maintenance batch preserves children, recovery history, later write
 });
 
 test('mobile maintenance rejects stale or unconfirmed changes without writing',async()=>{const p=device(),n=p.writes.length;assert.equal((await p.api('/api/notebook/maintenance',{version:0,action:'remove'})).status,409);assert.equal((await p.api('/api/notebook/maintenance',{version:7,action:'remove'})).status,500);assert.equal(p.writes.length,n);});
+
+test('Android large-store sync uses bounded bridge messages and a direct object transport',async()=>{
+ const data=notebook.normalize({...structuredClone(notebook.initialNotebook),setupCompleted:true,libraryBooks:[{...original,cloudFile}],ocrCache:Array.from({length:367},(_,page)=>({libraryBookId:original.id,page:page+1,version:1,text:'虚构扫描文字 English paragraph. '.repeat(1200),at:'2026-10-16T00:00:00Z'}))});
+ let sync=core.capture({...core.newSyncState('large-phone-test'),enabled:true,target:'cloud-a'},data);sync={...sync,pending:[],lastSync:'2026-10-16T00:00:00Z'};
+ const serialized=Buffer.byteLength(JSON.stringify({version:1,data,sync,drafts:{}}));assert(serialized>30*1024*1024,'fixture models a large OCR and sync journal');
+ const phone=device({android:true,initial:{version:1,syncRevision:1,data,sync,drafts:{reader:{text:'不可丢失的草稿🙂'}}}});phone.bookInfo.set(original.storedFile,{available:true,size:128,uri:'file:///fixture.pdf'});
+ const a=await phone.syncTransport('local'),b=await phone.syncTransport('local');assert.equal(a,b,'internal snapshots are shared immutable values, without whole-envelope JSON roundtrips');
+ const snapshot=await phone.module.mobileViewSnapshot();snapshot.data.notes[0].title='outside change';assert.notEqual((await phone.syncTransport('local')).data.notes[0].title,'outside change','public authoring views remain isolated');
+ const proto={};const api=load('lib/sync/client.ts',{'../value-equal':equality,'./core':core,'./protocol':proto},{window:{dispatchEvent(){}},CustomEvent});api.setSyncTransport(phone.syncTransport);
+ const done=await api.syncNow();assert.equal(done.sync.pending.length,0);assert.equal(done.data.ocrCache.length,367);assert.equal(done.drafts.reader.text,'不可丢失的草稿🙂');assert(phone.bridge.maxReadBytes<=65536);assert(phone.bridge.maxWriteChars<=48*1024);assert(phone.bridge.reads>100&&phone.bridge.writes>100);assert.equal(phone.store.data.ocrCache[366].text,data.ocrCache[366].text);
+ const before=await phone.module.mobileSnapshot(),nextSync={...before.sync,lastSync:'2026-10-16T01:00:00Z'};phone.failSave=true;await assert.rejects(phone.syncTransport('commit',commit(before,nextSync)),/disk full/);assert(phone.aborted);assert.equal((await phone.module.mobileSnapshot()).sync.lastSync,before.sync.lastSync,'failed native persistence does not advance cache or overwrite the durable store');
+ console.log('Large synthetic store bytes:',serialized,'native maximum read bytes:',phone.bridge.maxReadBytes,'maximum write chars:',phone.bridge.maxWriteChars);
+});

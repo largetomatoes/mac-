@@ -84,8 +84,9 @@ export function capture(state:SyncState,data:Notebook,id=()=>crypto.randomUUID()
 }
 export function materialize(state:SyncState,local:Notebook):{data:Notebook;conflicts:Conflict[]}{
  validateGraph(state.operations);
- const data=structuredClone(local),conflicts:Conflict[]=[],heads=tips(state.operations),localValues=project(local);
- if(!heads.size)return {data,conflicts};
+ const conflicts:Conflict[]=[],heads=tips(state.operations),localValues=project(local);
+ if(!heads.size)return {data:structuredClone(local),conflicts};
+ const data=structuredClone(Object.fromEntries(Object.entries(local).filter(([key])=>!(collections as readonly string[]).includes(key)))) as Notebook;
  for(const collection of collections)(data as unknown as Record<string,unknown>)[collection]=[];
  for(const [key,options] of heads){
   if(key==='settings/zoteroEnabled')continue;

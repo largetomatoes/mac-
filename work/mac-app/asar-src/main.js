@@ -732,13 +732,13 @@ async function handleDeviceSync(request,response,url) {
     if(route==='book'){
       const book=(await readStore()).data.libraryBooks.find(b=>b.id===input.id);if(!book||!['pdf','epub'].includes(book.format)||!book.storedFile||path.basename(book.storedFile)!==book.storedFile)throw new Error('未找到书籍原文件。');
       const destination=path.join(libraryDir,book.storedFile);
-      if(input.action==='status'){const stat=await fsp.stat(destination).catch(error=>error.code==='ENOENT'?null:Promise.reject(error));return jsonReply(response,200,{available:!!stat?.isFile()&&stat.size>0&&(!book.cloudFile||stat.size===book.cloudFile.size)});}
+      if(input.action==='status'){const stat=await fsp.stat(destination).catch(error=>error.code==='ENOENT'?null:Promise.reject(error));return jsonReply(response,200,{available:!!stat?.isFile()&&stat.size>0,matchesManifest:!book.cloudFile||stat?.size===book.cloudFile.size});}
       if(ORGANIZATION_TRIAL)return jsonReply(response,423,{error:input.action==='download'?'本机还没有这本书的原件。跨端同步恢复后可下载，已有本地书籍仍可直接阅读。':TRIAL_SYNC_NOTICE});
       const client=await active();
       if(input.action==='download'){await client.downloadBook(book.cloudFile,destination);return jsonReply(response,200,{ok:true});}
       if(input.action==='upload'){
         const cloudFile=await client.uploadBook(destination,book.format);
-        return await serializeNotebook(async()=>{if(restoringBackup)throw Error('正在保护资料，书籍清单稍后继续保存。');const current=await readStore();if(current.sync?.target!==input.target)throw new Error('同步连接已变化，书籍清单暂未写入。');const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data},current);return jsonReply(response,200,{cloudFile});});
+        return await serializeNotebook(async()=>{if(restoringBackup)throw Error('正在保护资料，书籍清单稍后继续保存。');const current=await readStore();if(current.sync?.target!==input.target)throw new Error('同步连接已变化，书籍清单暂未写入。');if(!current.data.libraryBooks.some(b=>b.id===book.id&&b.storedFile===book.storedFile))throw Error('书籍原件已变化，请重新同步。');const data={...current.data,libraryBooks:current.data.libraryBooks.map(b=>b.id===book.id&&b.storedFile===book.storedFile?{...b,cloudFile}:b)};await writeStore({...current,version:current.version+1,data},current);return jsonReply(response,200,{cloudFile});});
       }
     }
     return jsonReply(response,404,{error:'不支持的同步操作'});

@@ -81,6 +81,8 @@ async function prepare() {
   await cp(path.join(projectRoot, 'lib/notebook-settings.cjs'), path.join(stage, 'notebook-settings.cjs'));
   await cp(path.join(projectRoot, 'lib/ocr-cache.cjs'), path.join(stage, 'ocr-cache.cjs'));
   await cp(spaDist, path.join(resourceStage, 'static'), { recursive: true });
+  await cp(path.join(projectRoot,'assets/fonts'),path.join(resourceStage,'static/fonts'),{recursive:true});
+  await cp(path.join(projectRoot,'components/windows-fonts.css'),path.join(resourceStage,'static/fonts/windows-fonts.css'));
   // Windows 版额外带入「云端导入备份」向导（2.1.2+cloudimport 引入的功能）。
   const wizard = path.join(spaRoot, 'cloud-import.js');
   await requireFile(wizard);
@@ -131,5 +133,6 @@ if (prepareOnly) {
   }
   const archive = path.join(macAppRoot, 'release', `Wenjian-${version}-Windows-x64.zip`);
   execFileSync('python3', [path.join(macAppRoot, 'scripts/archive-windows.py'), appRoot, archive], { stdio: 'inherit',env:{...process.env,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'} });
+  execFileSync(process.execPath,[path.join(macAppRoot,'scripts/build-windows-installer.mjs'),appRoot],{stdio:'inherit'});
   console.log(`问间 Windows x64 ${version} 已打包：${appRoot}`);
 }

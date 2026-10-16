@@ -90,6 +90,7 @@ String child=path.substring(folder.length());if(Pattern.compile("<(?:[\\w-]+:)?c
             JSONObject manifest=remote(new JSONObject().put("action","control-get").put("key","library.json"));
             return remote(new JSONObject().put("action","list")).put("ok",true).put("remoteHasData",!manifest.isNull("text"));
         }
+        if(action.equals("book-index")){JSONArray keys=new JSONArray();for(String name:listing(ROOT+"books/")){if(name.matches("[a-f0-9]{64}\\.(pdf|epub)"))keys.put("books/"+name);}return new JSONObject().put("keys",keys);}
         if(action.equals("list")){
             String prefix=epoch.equals("legacy")?"changes/":"epochs/"+epoch+"/changes/";JSONArray keys=new JSONArray();
             for(String dir:listing(ROOT+prefix)){if(epoch.equals("legacy")&&dir.equals("upgrade-required.json"))continue;if(!dir.matches("[a-f0-9]/"))throw new IOException("同步目录含未知文件，未合并");for(String name:listing(ROOT+prefix+dir)){if(!name.matches(dir.charAt(0)+"[a-f0-9]{63}\\.json"))throw new IOException("同步文件名不正确");keys.put(prefix+name);}}return new JSONObject().put("keys",keys);
@@ -105,7 +106,7 @@ String child=path.substring(folder.length());if(Pattern.compile("<(?:[\\w-]+:)?c
     private static String hex(byte[] bytes){StringBuilder result=new StringBuilder();for(byte value:bytes)result.append(String.format(Locale.ROOT,"%02x",value));return result.toString();}
     JSONObject upload(File file)throws Exception {
         if(!file.isFile()||file.length()<1||file.length()>MAX_BOOK)throw new IOException("坚果云 WebDAV 单本书需小于 500 MB；笔记仍可同步");
-        MessageDigest digest=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(file)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1)digest.update(buffer,0,n);}String sha=hex(digest.digest()),key="books/"+sha+(file.getName().endsWith(".pdf")?".pdf":".epub");ensure(null);
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(file)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1)digest.update(buffer,0,n);}String sha=hex(digest.digest()),key="books/"+sha+(file.getName().endsWith(".pdf")?".pdf":".epub");try(Response head=request("HEAD",object(key),null)){if(head.code()!=404){success(head);if(!Long.toString(file.length()).equals(head.header("Content-Length")))throw new IOException("云端书籍大小与本机不一致");return new JSONObject().put("key",key).put("sha256",sha).put("size",file.length());}}ensure(null);
         try(Response response=request("PUT",object(key),RequestBody.create(file,MediaType.get("application/octet-stream")),"If-None-Match","*")){if(response.code()==412){try(Response head=request("HEAD",object(key),null)){success(head);if(!Long.toString(file.length()).equals(head.header("Content-Length")))throw new IOException("云端书籍大小与本机不一致");}}else success(response);}return new JSONObject().put("key",key).put("sha256",sha).put("size",file.length());
     }
     JSONObject download(JSONObject manifest,File file)throws Exception {

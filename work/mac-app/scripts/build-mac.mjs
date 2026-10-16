@@ -67,6 +67,7 @@ async function prepare() {
   const plist = await readFile(path.join(appRoot, 'native-Info.plist'), 'utf8');
   const plistVersion = plistValue(plist, 'CFBundleShortVersionString');
   if ((manifest.releaseVersion||manifest.version) !== plistVersion) throw new Error(`应用版本不一致：${manifest.version} / ${plistVersion}`);
+  if(String(manifest.buildVersion)!==plistValue(plist,'CFBundleVersion'))throw new Error('Mac 构建号与应用清单不一致');
   return {
     version: manifest.releaseVersion||manifest.version,
     packageVersion:manifest.version,

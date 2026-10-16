@@ -1,4 +1,4 @@
-> 当前维护构建：**问间 3.14（320）**。项目已改名为 [wenjian-software](https://github.com/largetomatoes/wenjian-software)，[官网工程](https://github.com/largetomatoes/wenjian-web)独立维护。新地址、下载及一次覆盖升级说明见 [发布说明](RELEASE_NOTES_3.14_320.md)，构建步骤见 [BUILDING.md](BUILDING.md)。
+> 当前维护构建：**问间 3.14（321）**。独立发布、三端书籍同步与 Windows 安装版见 [发布说明](RELEASE_NOTES_3.14_321.md)，构建步骤见 [BUILDING.md](BUILDING.md)。
 
 # 问间 · 3.14
 
@@ -35,7 +35,7 @@ Copyright (C) 2026 西林sirens。原版本：[largetomatoes/wenjian-software](h
 
 ## 下载与安装
 
-3.14 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.14（320）发布说明](RELEASE_NOTES_3.14_320.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/wenjian-software/releases) 的实际附件为准。
+3.14 提供 Mac、Windows 和同证书签名的 Android 安装包。变更、升级顺序及验证范围见 [3.14（321）发布说明](RELEASE_NOTES_3.14_321.md)；可下载文件以 [GitHub Releases](https://github.com/largetomatoes/wenjian-software/releases) 的实际附件为准。
 
 从仓库的 **Releases** 下载对应系统的安装包。Mac（Apple 芯片）使用 `Wenjian-*-macOS-arm64.zip`，解压后把“问间”拖入“应用程序”；Windows x64 使用 `Wenjian-*-Windows-x64.zip`，解压后运行 `Wenjian.exe`。Android 8.0+ 使用 `Wenjian-*-Android.apk`，移动版以阅读和笔记为主；PDF 需要 WebView 111+。当前构建没有 Apple 公证或 Windows 商业代码签名，系统首次启动时可能要求手动允许。
 

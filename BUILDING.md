@@ -148,3 +148,17 @@ Android 可在 `android` 目录运行 `./gradlew :app:lintRelease :app:testRelea
 对应标签为`v3.14-build320`，公开版本3.14、桌面buildVersion/CFBundleVersion与Android versionCode均为320。软件仓库`largetomatoes/wenjian-software`，官网仓库`largetomatoes/wenjian-web`。更新来源直接使用新仓库，历史下载只允许新旧两个指定仓库，继续验证签名和摘要。
 
 发行附件名使用`Wenjian-3.14-build320-平台`，另附`update-manifest-320.json`，发行说明首行标记`<!-- wenjian-build:320 -->`。历史319清单及安装包保持不变。320来源和变更范围见`RELEASE_NOTES_3.14_320.md`。319及更早客户端须手动覆盖升级一次。
+
+## 3.14（321）独立 Release
+
+对应源代码标签 `v3.14-build321`。桌面 `asar-src/package.json` 的 buildVersion、Mac native-Info.plist 的 CFBundleVersion 与 Android versionCode 均为 321。Mac 与 Windows 构建顺序执行（共用 SPA 暂存目录）。
+
+Windows 需要 NSIS 3.x 的 `makensis`（macOS 可通过 Homebrew 安装）。运行 `node work/mac-app/scripts/build-windows.mjs` 会依次构建完整目录、UTF-8 ZIP 和 Setup.exe；单独制作安装程序可运行 `node work/mac-app/scripts/build-windows-installer.mjs`。安装程序无需联网，默认按当前用户安装。开发环境缓存路径由环境变量指定，不能带入源码归档。
+
+Windows 字体已随源码提交，不需要运行时联网。`assets/fonts/SOURCES.json` 记录官方来源及上游原字体摘要，WOFF2 用 fonttools 4.60.2 + brotli 1.2.0 从对应可变 TTF 转换，保留原始字形与字重范围。两份 OFL 许可证随字体分发，不要以项目自定义许可覆盖它们。
+
+Windows CI 工作流 `windows-release-smoke.yml` 从指定 Release 下载构建产物，在临时 Windows runner 测试普通 ZIP 与安装版读取同一资料目录、静默安装、覆盖安装、字体文件服务和卸载保留资料。测试拒绝在已有用户资料的系统执行。
+
+独立 Release 名称为 `问间 3.14（321）`，标签 `v3.14-build321`。签名更新清单 payload 中增加 `tag`，须与 version/build 一致；附件名称 `Wenjian-3.14-build321-平台`。Windows 签名自动更新载荷仍为 ZIP，Setup.exe 是首次及手动覆盖安装入口。320 及以前需要手动覆盖升级一次，不能仅修改远端发现信息解决。
+
+诊断采集只记录本地阶段、异常类型/代码位置与内存统计，默认不会发送。物理 Android 实机验证仍需连接用户设备。

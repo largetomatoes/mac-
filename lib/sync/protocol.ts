@@ -11,12 +11,33 @@ const remote=<T,>(target:string,body:unknown)=>syncApi<T>('remote',{target,...bo
 function assertLibraryBinding(state:ReturnType<typeof newSyncState>,target:string,manifest:Manifest|null){if(state.target&&state.target!==target)throw Error('连接的资料库已改变，请在连接设置中处理。');if(state.libraryId&&manifest&&state.libraryId!==manifest.libraryId)throw Error('本机与云端不是同一资料库，请核对后接入。');}
 export async function readManifest(target:string):Promise<{manifest:Manifest|null;etag:string|null}>{const r=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'library.json'});if(!r.text)return {manifest:null,etag:r.etag};const m=JSON.parse(r.text) as Manifest;const snapshotKeys=(keys:unknown):keys is string[]=>Array.isArray(keys)&&keys.every(k=>typeof k==='string'&&/^snapshots\/[a-f0-9]{64}\.json$/.test(k));if(![1,2,3,4].includes(m.schema)||!/^[-a-zA-Z0-9_]{8,100}$/.test(m.libraryId)||!(m.epoch==='legacy'||/^[-a-zA-Z0-9_]{8,100}$/.test(m.epoch))||!snapshotKeys(m.snapshots)||(m.retired!==undefined&&(!Array.isArray(m.retired)||m.retired.some(k=>!/^(?:changes|epochs\/[-a-zA-Z0-9_]{8,100}\/changes|snapshots)\/[a-f0-9]{64}\.json$/.test(k))))||(m.history!==undefined&&(!Array.isArray(m.history)||m.history.some(v=>!v||!/^[-a-zA-Z0-9_]{8,100}$/.test(v.id)||!snapshotKeys(v.snapshots)||typeof v.deviceName!=='string'||!Number.isFinite(Date.parse(v.at))))))throw Error('云端资料库标识无效，未修改本机内容。');return {manifest:m,etag:r.etag};}
 export async function cloudPreview(target:string):Promise<CloudPreview>{const {manifest}=await readManifest(target),listing=await remote<{keys:string[]}>(target,{action:'list',epoch:manifest?.epoch||'legacy'});const operations:Operation[]=[];for(const key of [...(manifest?.snapshots||[]),...listing.keys]){const r=await remote<{text:string}>(target,{action:'get',key});if(await sha256(r.text)!==key.split('/').at(-1)?.slice(0,-5))throw Error('云端资料校验失败。');const batch=JSON.parse(r.text);if(batch.schema!==1||!Array.isArray(batch.operations))throw Error('云端同步格式暂不支持。');operations.push(...batch.operations);}const all=unionOperations(operations),local=structuredClone(initialNotebook);const merged=materialize({...newSyncState(),operations:all},local);return {manifest,operations:all,data:merged.data,conflicts:merged.conflicts,keys:listing.keys};}
-// Every new desktop client shares this lease. Conditional writes prevent two writers from owning it.
+export type LeaseRecovery={begin:(target:string,owner:string)=>Promise<{recoverableOwners:string[];deviceName?:string}>;end:(target:string,owner:string,released:boolean,succeeded:boolean)=>Promise<void>};
+let leaseRecovery:LeaseRecovery|undefined;
+export function setLeaseRecovery(recovery:LeaseRecovery){leaseRecovery=recovery;}
+// Recovery requires the exact locally persisted prior task token, never just a device name.
 export async function withCloudLease<T>(target:string,job:(renew:RenewLease)=>Promise<T>):Promise<T>{
- const owner=crypto.randomUUID();let owned=false,nextRenewal=0;
- const claim=async(force=false)=>{if(owned&&!force&&Date.now()<nextRenewal)return;const current=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'lease.json'}),old=current.text?JSON.parse(current.text):null;if(owned&&old?.owner!==owner)throw Error('同步占用已失效，请重新同步。');if(old?.owner&&old.owner!==owner&&old.until>Date.now())throw Error('另一台设备正在同步，请稍后重试。');if(current.text&&!current.etag)throw Error('云端未返回并发校验标识，暂不进行同步写入。');await remote(target,{action:'control-put',key:'lease.json',etag:current.etag,text:stable({owner,until:Date.now()+10*60*1000})});owned=true;nextRenewal=Date.now()+60*1000;};
- await claim();try{return await job(claim);}finally{if(owned){try{const r=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'lease.json'});if(r.text&&JSON.parse(r.text).owner===owner&&r.etag)await remote(target,{action:'control-put',key:'lease.json',etag:r.etag,text:stable({owner:'',until:0})});}catch{/* Expiry also releases an interrupted lease. */}}}
+ const owner=crypto.randomUUID(),recovery=leaseRecovery;let owned=false,nextRenewal=0,released=false,succeeded=false;
+ const saved=await recovery?.begin(target,owner),recoverable=new Set(saved?.recoverableOwners||[]);
+ const claim=async(force=false)=>{
+  if(owned&&!force&&Date.now()<nextRenewal)return;
+  const current=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'lease.json'}),old=current.text?JSON.parse(current.text):null;
+  if(owned&&old?.owner!==owner)throw Error('同步占用已失效，请重新同步。');
+  if(old?.owner&&old.owner!==owner&&old.until>Date.now()&&!recoverable.has(old.owner)){
+   released=true;
+   const device=typeof old.deviceName==='string'?old.deviceName.replace(/[\r\n]/g,' ').slice(0,60):'另一台设备';
+   throw Error(device+' 正在同步，请稍后重试。占用到期后可重试；不会覆盖正在进行的同步。');
+  }
+  if(current.text&&!current.etag)throw Error('云端未返回并发校验标识，暂不进行同步写入。');
+  await remote(target,{action:'control-put',key:'lease.json',etag:current.etag,text:stable({owner,until:Date.now()+10*60*1000,...(saved?.deviceName?{deviceName:saved.deviceName}:{})})});
+  owned=true;nextRenewal=Date.now()+60*1000;
+ };
+ try{await claim();const result=await job(claim);succeeded=true;return result;}
+ finally{
+  if(owned){try{const r=await remote<{text:string|null;etag:string|null}>(target,{action:'control-get',key:'lease.json'});if(r.text&&JSON.parse(r.text).owner===owner){if(r.etag){await remote(target,{action:'control-put',key:'lease.json',etag:r.etag,text:stable({owner:'',until:0})});released=true;}}else released=true;}catch{/* The local task token is retained for verified recovery after interruption. */}}
+  await recovery?.end(target,owner,released,succeeded).catch(()=>{});
+ }
 }
+
 async function saveSnapshots(target:string,operations:Operation[],renew?:RenewLease){const snapshots:string[]=[];for(const batch of operationBatches(operations)){await renew?.();const text=stable({schema:1,operations:batch}),key='snapshots/'+await sha256(text)+'.json';await remote(target,{action:'put',key,text});const saved=await remote<{text:string}>(target,{action:'get',key});if(saved.text!==text)throw Error('新快照校验失败，未切换资料库基准。');snapshots.push(key);}return snapshots;}
 async function publishBaseline(target:string,snapshot:Envelope,data:Notebook,renew?:RenewLease):Promise<{manifest:Manifest;snapshot:Envelope}>{
  if(data.setupCompleted===false)throw Error('这台设备尚未建立书库，请先完成设置。');

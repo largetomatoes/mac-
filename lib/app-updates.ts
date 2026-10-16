@@ -19,9 +19,9 @@ export function validReleaseUrl(value:string){try{const url=new URL(value);retur
 function releaseAssetUrl(value:string,tag:string){return validReleaseUrl(value)&&RELEASE_ROOTS.some(root=>new URL(value).pathname.startsWith(root+'/download/'+encodeURIComponent(tag)+'/'));}
 export function selectUpdate(releases:Release[],info:AppInfo):UpdateResult {
  if(!Array.isArray(releases)||!versionParts(info.version))throw Error('更新信息格式不正确');
- const formal=releases.filter(release=>!release.draft&&!release.prerelease&&versionParts(release.tag_name)&&validReleaseUrl(release.html_url)).sort((a,b)=>compareVersions(b.tag_name,a.tag_name));
+ const formal=releases.filter(release=>!release.draft&&!release.prerelease&&releaseIdentity(release)&&validReleaseUrl(release.html_url)).sort((a,b)=>compareVersions(releaseIdentity(b)!.version,releaseIdentity(a)!.version)||releaseBuild(b)-releaseBuild(a));
  const latest=formal[0];if(!latest)return {state:'empty'};
- const version=latest.tag_name.replace(/^v/,''),build=releaseBuild(latest),baseComparison=compareVersions(version,info.version),comparison=baseComparison|| (build?Math.sign(build-(Number(info.build)||0)):0);
+ const version=releaseIdentity(latest)!.version,build=releaseBuild(latest),baseComparison=compareVersions(version,info.version),comparison=baseComparison|| (build?Math.sign(build-(Number(info.build)||0)):0);
  const suffix=info.platform==='android'?'Android.apk':info.platform==='darwin'?`macOS-${info.arch}.zip`:`Windows-${info.arch}.zip`;
  const name=build?`Wenjian-${version}-build${build}-${suffix}`:`Wenjian-${version}-${suffix}`;
  const asset=latest.assets?.find(item=>item.name===name&&item.state==='uploaded'&&releaseAssetUrl(item.browser_download_url,latest.tag_name));
@@ -30,3 +30,5 @@ export function selectUpdate(releases:Release[],info:AppInfo):UpdateResult {
 // Discovery metadata is public; the native updater separately verifies the
 // signed manifest, build number, package identity and file hash before install.
 export function releaseBuild(release:Release){const value=/<!--\s*wenjian-build:(\d+)\s*-->/.exec(release.body||'')?.[1],build=Number(value);return Number.isSafeInteger(build)&&build>0?build:0;}
+
+export function releaseIdentity(release:Release){const match=/^v?(.+?)(?:-build([1-9][0-9]*))?$/.exec(release.tag_name);if(!match||!versionParts(match[1]))return null;const tagBuild=Number(match[2]||0),bodyBuild=releaseBuild(release);if(match[2]&&(!Number.isSafeInteger(tagBuild)||tagBuild!==bodyBuild))return null;return {version:match[1],build:bodyBuild};}

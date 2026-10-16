@@ -29,3 +29,12 @@ test('renamed repository retains signed legacy packages without trusting other r
  for(const url of ['https://github.com/largetomatoes/wenjian-software-evil/releases/download/v3.14/Wenjian.zip','https://github.com/other/wenjian-software/releases/download/v3.14/Wenjian.zip','https://github.com/largetomatoes/wenjian-software/releases/download/v3.141/Wenjian.zip'])assert.throws(()=>verifyManifest(envelope(bytes,{url}),'win32','x64',310,'3.14',keys.publicKey),/来源/);
  const updater=createUpdater({directory:root,build:310,platform:'win32',arch:'x64',verificationKey:keys.publicKey,releases:async()=>[{...release,assets:[{name:'update-manifest-311.json',state:'uploaded',browser_download_url:base+'update-manifest-311.json'}]}],getJson:async url=>{assert.equal(url,base+'update-manifest-311.json');return envelope(bytes,{url:base+'Wenjian.zip'});},responseFor:async url=>{assert.equal(url,base+'Wenjian.zip');return [bytes];}});updater.start('3.14',311);assert.equal((await wait(updater)).state,'ready');
 });
+
+test('independent build tags bind manifest and asset URL to the exact signed build',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wenjian-independent-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const bytes=zip();
+ const base='https://github.com/largetomatoes/wenjian-software/releases/download/v3.14-build321/';
+ function signed(tag='v3.14-build321'){const value=JSON.parse(envelope(bytes).payload);value.build=321;value.tag=tag;value.assets[0].url=base+'Wenjian-3.14-build321-Windows-x64.zip';const payload=JSON.stringify(value);return {payload,signature:crypto.sign('sha256',Buffer.from(payload),keys.privateKey).toString('base64')};}
+ assert.equal(verifyManifest(signed(),'win32','x64',320,'3.14',keys.publicKey).manifest.build,321);
+ assert.throws(()=>verifyManifest(signed('v3.14-build322'),'win32','x64',320,'3.14',keys.publicKey),/标签/);
+ const updater=createUpdater({directory:dir,build:320,platform:'win32',arch:'x64',verificationKey:keys.publicKey,releases:async()=>[{tag_name:'v3.14-build321',assets:[{name:'update-manifest-321.json',state:'uploaded',browser_download_url:base+'update-manifest-321.json'}]}],getJson:async()=>signed(),responseFor:async()=>[bytes]});updater.start('3.14',321);assert.equal((await wait(updater)).state,'ready');
+});

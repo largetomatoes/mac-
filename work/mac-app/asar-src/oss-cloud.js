@@ -454,9 +454,9 @@ function createOssArchiveClient(rawConfig, options = {}) {
       if(!(await send('GET',object)).body.equals(probe))throw new Error('连接检查文件不一致，请检查云端问间目录。');
       return {ok:true,...await syncRemote({action:'list'})};
     }
-    if(action==='list'){
+    if(action==='list'||action==='book-index'){
       const keys=[];let token;
-      do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+(epoch&&epoch!=='legacy'?'epochs/'+epoch+'/changes/':'changes/'),'max-keys':1000,...(token?{'continuation-token':token}:{})});
+      do { const result=await send('GET','',{'list-type':2,prefix:syncPrefix+(action==='book-index'?'books/':epoch&&epoch!=='legacy'?'epochs/'+epoch+'/changes/':'changes/'),'max-keys':1000,...(token?{'continuation-token':token}:{})});
         const xml=result.body.toString('utf8');for(const block of xmlBlocks(xml,'Contents')) {const k=xmlTag(block,'Key');if(k?.startsWith(syncPrefix)){const relative=k.slice(syncPrefix.length);if(relative==='changes/upgrade-required.json')continue;syncKey(relative);keys.push(relative);}}
         const next=xmlTag(xml,'NextContinuationToken');if(xmlTag(xml,'IsTruncated')==='true'&&(!next||next===token))throw new Error('同步目录分页失败。');token=xmlTag(xml,'IsTruncated')==='true'?next:null;
       }while(token);return {keys};

@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
     <cache-path name="wenjian_updates" path="wenjian-updates/" />
+    <cache-path name="sync_diagnostics" path="sync-diagnostics/" />
 </paths>
